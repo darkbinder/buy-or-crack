@@ -119,8 +119,6 @@ Provide:
 3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's system and online components, e.g. "Server-side character validations", "Always-online required", "Peer-to-peer matchmaking", "Requires EA App launcher").`;
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${config.GEMINI_API_KEY}`;
-
   const requestBody = {
     contents: [
       {
@@ -147,38 +145,62 @@ Provide:
     }
   };
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(requestBody)
-  });
+  const models = [
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-1.5-flash'
+  ];
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const message = errorData.error?.message || `HTTP error! status: ${response.status}`;
-    throw new Error(message);
+  let lastError = null;
+
+  for (const modelName of models) {
+    try {
+      console.log(`Matrix: Attempting query with model ${modelName}...`);
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.GEMINI_API_KEY}`;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.error?.message || `HTTP error! status: ${response.status}`;
+        throw new Error(message);
+      }
+
+      const result = await response.json();
+      
+      if (!result.candidates || result.candidates.length === 0) {
+        throw new Error('No candidates returned from Gemini API.');
+      }
+
+      const textResponse = result.candidates[0].content.parts[0].text;
+      const parsedResponse = JSON.parse(textResponse);
+
+      return {
+        evaluationType: underThreshold ? 'HASSLE' : 'ONLINE_DEPENDENCY',
+        decisionScore: parsedResponse.decision_score,
+        reasoning: parsedResponse.reasoning,
+        onlineComponents: parsedResponse.online_components,
+        threshold: threshold,
+        priceNumeric: price,
+        underThreshold: underThreshold,
+        modelUsed: modelName
+      };
+    } catch (err) {
+      console.warn(`Matrix: Model ${modelName} failed. Error:`, err.message || err);
+      lastError = err;
+      // Continue to try the next model in the fallback list
+    }
   }
 
-  const result = await response.json();
-  
-  if (!result.candidates || result.candidates.length === 0) {
-    throw new Error('No candidates returned from Gemini API.');
-  }
-
-  const textResponse = result.candidates[0].content.parts[0].text;
-  const parsedResponse = JSON.parse(textResponse);
-
-  return {
-    evaluationType: underThreshold ? 'HASSLE' : 'ONLINE_DEPENDENCY',
-    decisionScore: parsedResponse.decision_score,
-    reasoning: parsedResponse.reasoning,
-    onlineComponents: parsedResponse.online_components,
-    threshold: threshold,
-    priceNumeric: price,
-    underThreshold: underThreshold
-  };
+  // If all models in the loop failed, throw the last captured error
+  throw new Error(`All Gemini models failed. Last error: ${lastError ? lastError.message : 'Unknown'}`);
 }
 
 /**
