@@ -38,7 +38,13 @@ async function handleMessage(message, sender) {
         return { error: 'NO_API_KEY', message: 'Gemini API Key is not configured. Please open Extension Options.' };
       }
 
+      // Fetch active player count before invoking AI
+      const playerCount = await getPlayerCount(message.gameData.appid || message.gameData.appId);
+      message.gameData.playerCount = playerCount;
+
       const evaluation = await evaluateGameWithAI(message.gameData, config);
+      evaluation.playerCount = playerCount; // Pass back to display in UI
+
       return { success: true, data: evaluation };
     } catch (err) {
       console.error('Error evaluating game:', err);
@@ -81,6 +87,7 @@ Game details:
 - Description: ${gameData.description}
 - Genres: ${genresStr}
 - Categories: ${categoriesStr}
+- Active Steam Players (Online now): ${gameData.playerCount !== null ? gameData.playerCount : 'Unknown'} (Note: If this is very low, e.g. < 100, online multiplayer is effectively dead, which might impact the value of buying it for matchmaking).
 
 Score the "Hassle of Cracking" (1 to 5) where:
 - 5 (High hassle to crack): The game has frequent updates that break compatibility, relies heavily on Steam Workshop for essential mods, or relies on Steam Cloud saves. It is a headache to maintain a cracked copy. (Recommends BUY).
@@ -100,6 +107,7 @@ Game details:
 - Description: ${gameData.description}
 - Genres: ${genresStr}
 - Categories: ${categoriesStr}
+- Active Steam Players (Online now): ${gameData.playerCount !== null ? gameData.playerCount : 'Unknown'} (Note: If this is very low, e.g. < 100, online multiplayer is effectively dead, which might impact the value of buying it for matchmaking).
 
 Score the "Online Dependency" (1 to 5) where:
 - 5 (High online requirement): The game has server-side validations, live services, or is multiplayer matchmaking only. Cracking is impossible or makes the game completely unplayable. You MUST buy it to play it. (Recommends BUY).
@@ -171,4 +179,23 @@ Provide:
     priceNumeric: price,
     underThreshold: underThreshold
   };
+}
+
+/**
+ * Fetches the active player count for a given Steam AppID.
+ * Uses Steam's public Web API.
+ */
+async function getPlayerCount(appId) {
+  if (!appId) return null;
+  try {
+    const url = `https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=${appId}`;
+    const response = await fetch(url);
+    if (response.ok) {
+      const json = await response.json();
+      return json.response?.player_count ?? null;
+    }
+  } catch (err) {
+    console.error('Error fetching player count:', err);
+  }
+  return null;
 }
