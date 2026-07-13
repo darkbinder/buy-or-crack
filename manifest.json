@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Steam Buy or Crack Decision Matrix",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Evaluates whether to BUY or CRACK a Steam game directly from its Store page using Gemini AI.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "*://store.steampowered.com/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.steampowered.com/*"
   ],
   "background": {
     "scripts": ["background.js"]
