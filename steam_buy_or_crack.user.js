@@ -25,7 +25,8 @@
   const DEFAULTS = {
     GEMINI_API_KEY: '',
     STEAM_CC: 'PH',
-    MATRIX_PRICE_THRESHOLD: 1000
+    MATRIX_PRICE_THRESHOLD: 1000,
+    EVALUATE_EARLY_ACCESS: false
   };
 
   // Helper functions to get/set settings using GM storage
@@ -41,7 +42,8 @@
     return {
       GEMINI_API_KEY: getSetting('GEMINI_API_KEY'),
       STEAM_CC: getSetting('STEAM_CC'),
-      MATRIX_PRICE_THRESHOLD: parseFloat(getSetting('MATRIX_PRICE_THRESHOLD')) || 1000
+      MATRIX_PRICE_THRESHOLD: parseFloat(getSetting('MATRIX_PRICE_THRESHOLD')) || 1000,
+      EVALUATE_EARLY_ACCESS: getSetting('EVALUATE_EARLY_ACCESS')
     };
   }
 
@@ -612,6 +614,57 @@
       background: rgba(255, 255, 255, 0.12);
       color: #f1f5f9;
     }
+
+    /* Checkbox styling */
+    .checkbox-group {
+      flex-direction: row !important;
+      align-items: center !important;
+      gap: 10px !important;
+      cursor: pointer;
+      user-select: none;
+      margin-top: 4px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: 18px !important;
+      height: 18px !important;
+      accent-color: #8b5cf6;
+      cursor: pointer;
+    }
+
+    .checkbox-group label {
+      cursor: pointer;
+      color: #cbd5e1 !important;
+      font-size: 13px !important;
+      font-weight: 500 !important;
+      text-transform: none !important;
+      letter-spacing: normal !important;
+    }
+
+    /* Bypass states styling */
+    .widget-card.bypass::before {
+      background: linear-gradient(90deg, #3b82f6, #60a5fa, #2563eb);
+    }
+
+    .widget-card.early-access-bypass::before {
+      background: linear-gradient(90deg, #f59e0b, #fbbf24, #d97706);
+    }
+
+    .recommendation-banner.bypass-banner {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      text-shadow: 0 0 10px rgba(96, 165, 250, 0.2);
+      box-shadow: inset 0 0 12px rgba(59, 130, 246, 0.05);
+    }
+
+    .recommendation-banner.early-access-banner {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      text-shadow: 0 0 10px rgba(251, 191, 36, 0.2);
+      box-shadow: inset 0 0 12px rgba(245, 158, 11, 0.05);
+    }
   `;
   shadow.appendChild(style);
 
@@ -654,6 +707,10 @@
           <input type="number" id="input-threshold" placeholder="1000">
         </div>
       </div>
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="input-early-access">
+        <label for="input-early-access">Evaluate Early Access Games</label>
+      </div>
       <div class="form-actions">
         <button id="btn-cancel-settings" class="btn btn-secondary">Cancel</button>
         <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
@@ -668,6 +725,7 @@
   const keyInput = settingsView.querySelector('#input-key');
   const ccInput = settingsView.querySelector('#input-cc');
   const thresholdInput = settingsView.querySelector('#input-threshold');
+  const earlyAccessCheckbox = settingsView.querySelector('#input-early-access');
   const saveSettingsBtn = settingsView.querySelector('#btn-save-settings');
   const cancelSettingsBtn = settingsView.querySelector('#btn-cancel-settings');
   const eyeIcon = settingsView.querySelector('#eye-icon');
@@ -725,6 +783,7 @@
     setSetting('GEMINI_API_KEY', apiKey);
     setSetting('STEAM_CC', cc);
     setSetting('MATRIX_PRICE_THRESHOLD', threshold);
+    setSetting('EVALUATE_EARLY_ACCESS', earlyAccessCheckbox.checked);
 
     // Switch view back and trigger evaluation
     settingsView.style.display = 'none';
@@ -738,6 +797,7 @@
     keyInput.value = config.GEMINI_API_KEY;
     ccInput.value = config.STEAM_CC;
     thresholdInput.value = config.MATRIX_PRICE_THRESHOLD;
+    earlyAccessCheckbox.checked = config.EVALUATE_EARLY_ACCESS;
     
     evalView.style.display = 'none';
     settingsView.style.display = 'flex';
@@ -771,12 +831,25 @@
     showLoading();
     try {
       const config = getSettings();
+      const gameData = scrapeGameDetails();
+
+      // 1. Check if Free-to-Play
+      if (gameData.isFree) {
+        showBypass('FREE_TO_PLAY', gameData.name);
+        return;
+      }
+
+      // 2. Check if Early Access bypassed
+      if (gameData.isEarlyAccess && !config.EVALUATE_EARLY_ACCESS) {
+        showBypass('EARLY_ACCESS', gameData.name);
+        return;
+      }
+
       if (!config.GEMINI_API_KEY) {
         showError('NO_API_KEY', 'Gemini API Key is not configured.');
         return;
       }
 
-      const gameData = scrapeGameDetails();
       const playerCount = await getPlayerCount(gameData.appId);
       gameData.playerCount = playerCount;
 
@@ -846,6 +919,58 @@
           </div>
         </div>
       `;
+    }
+
+    const trigger = evalView.querySelector('.settings-trigger');
+    if (trigger) {
+      trigger.addEventListener('click', openSettingsInline);
+    }
+  }
+
+  function showBypass(type, gameName) {
+    if (type === 'FREE_TO_PLAY') {
+      widgetInner.className = 'widget-card bypass';
+      evalView.innerHTML = `
+        <div class="recommendation-banner bypass-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>🎁 FREE-TO-PLAY: ${gameName}</span>
+        </div>
+        <p style="font-size: 13.5px; line-height: 1.5; color: #cbd5e1; margin-bottom: 12px;">
+          This game is Free-to-Play. There is no purchasing decision or crack viability evaluation required. You can add it directly to your Steam library!
+        </p>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <a class="settings-trigger" style="color: #60a5fa; cursor: pointer; font-size: 12px; text-decoration: underline;">Configure settings</a>
+        </div>
+      `;
+    } else if (type === 'EARLY_ACCESS') {
+      widgetInner.className = 'widget-card early-access-bypass';
+      evalView.innerHTML = `
+        <div class="recommendation-banner early-access-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+          </svg>
+          <span>🚧 EARLY ACCESS BYPASS: ${gameName}</span>
+        </div>
+        <p style="font-size: 13.5px; line-height: 1.5; color: #cbd5e1; margin-bottom: 12px;">
+          Unfinished / Early Access game bypassed by default to minimize Gemini AI token consumption.
+        </p>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <a class="quick-enable-trigger" style="color: #fbbf24; cursor: pointer; font-weight: 600; text-decoration: underline; font-size: 13px;">Enable Early Access Evaluations</a>
+          <a class="settings-trigger" style="color: #64748b; cursor: pointer; font-size: 12px; text-decoration: underline;">Configure settings</a>
+        </div>
+      `;
+
+      const quickEnable = evalView.querySelector('.quick-enable-trigger');
+      if (quickEnable) {
+        quickEnable.addEventListener('click', () => {
+          setSetting('EVALUATE_EARLY_ACCESS', true);
+          runEvaluation();
+        });
+      }
     }
 
     const trigger = evalView.querySelector('.settings-trigger');
@@ -1010,6 +1135,15 @@
     const headerImage = document.querySelector('.game_header_image_full')?.src || 
                         document.querySelector('meta[property="og:image"]')?.content || '';
 
+    const isEarlyAccess = !!document.querySelector('.early_access_header');
+    
+    const pStrLower = priceString.toLowerCase();
+    const isFree = priceNumeric === 0 || 
+                   pStrLower.includes('free') || 
+                   pStrLower.includes('demo') || 
+                   pStrLower.includes('play for free') || 
+                   pStrLower.includes('play a playtest');
+
     return {
       name,
       appId,
@@ -1018,7 +1152,9 @@
       description,
       genres: uniqueGenres,
       categories: uniqueCategories,
-      headerImage
+      headerImage,
+      isEarlyAccess,
+      isFree
     };
   }
 
