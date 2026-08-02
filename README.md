@@ -2,9 +2,7 @@
 
 A premium decision assistant that evaluates whether to **BUY** or **CRACK** a Steam game directly on its Steam Store page. It uses the Google Gemini API to dynamically score games based on their price, update frequency, online dependencies, and mod requirements.
 
-This repository contains **both** implementations of the tool so you can choose what works best for you:
-1. **Userscript (Recommended):** Zero-friction installation, works instantly in standard browsers via script managers (Violentmonkey, Tampermonkey), and updates automatically from GitHub.
-2. **Firefox Extension (Manifest V3):** Traditional browser extension with background scripts and a dedicated Options tab.
+This repository contains a **Userscript** implementation of the tool: a zero-friction setup that works instantly in standard browsers via script managers (Violentmonkey, Tampermonkey) and updates automatically from GitHub.
 
 ---
 
@@ -22,9 +20,9 @@ This repository contains **both** implementations of the tool so you can choose 
 
 ---
 
-## 🚀 Option 1: Userscript Installation (Recommended)
+## 🚀 Installation & Setup
 
-This is the easiest and most sustainable way to run the script permanently.
+Follow these steps to get the script running in your browser:
 
 ### 1. Install a Script Manager
 Install [Violentmonkey](https://violentmonkey.github.io/) or [Tampermonkey](https://www.tampermonkey.net/) for your browser.
@@ -45,30 +43,6 @@ Install [Violentmonkey](https://violentmonkey.github.io/) or [Tampermonkey](http
    - **Steam CC:** Set to your regional currency country code (e.g. `PH` for Philippines).
    - **Price Threshold:** Set your budget limit.
 5. Click **"Save Settings"**. The widget will automatically save your key securely (`GM.setValue`) and instantly run the evaluation without reloading!
-
----
-
-## 📦 Option 2: Firefox Extension Installation (Local Sideloading)
-
-To load and run the local extension package in Firefox:
-
-### 1. Open Firefox Debugging
-1. Launch Firefox.
-2. Type `about:debugging` in the URL search bar and press **Enter**.
-
-### 2. Load the Extension
-1. Click on **"This Firefox"** in the left navigation panel.
-2. Locate the **Temporary Extensions** section.
-3. Click the **"Load Temporary Add-on..."** button.
-4. Select the `manifest.json` file inside `f:\python\buy game scorer\firefox extenstion` and click **Open**.
-
-*Note: Sideloaded extensions are temporary and will be removed whenever you close Firefox. You must reload it when restarting.*
-
-### 3. Configuration & Setup
-1. In `about:debugging` on the loaded extension card, click **"Preferences"** (or Options).
-2. Alternatively, click the **"Open Extension Settings"** link on the injected Steam page widget.
-3. Enter your Gemini API key, Steam CC, and Threshold price.
-4. Click **"Save Settings"**.
 
 ---
 
