@@ -326,26 +326,7 @@
       color: #64748b;
     }
 
-    .player-count-badge {
-      font-size: 10px;
-      font-weight: 700;
-      padding: 3px 8px;
-      background: rgba(59, 130, 246, 0.1);
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      border-radius: 50px;
-      color: #60a5fa;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      text-shadow: 0 0 8px rgba(96, 165, 250, 0.15);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
 
-    .player-count-badge svg {
-      width: 12px;
-      height: 12px;
-    }
 
     /* Reasoning block */
     .reasoning-block {
@@ -1042,12 +1023,6 @@
         <div class="title-area">
           <span class="matrix-badge">${result.evaluationType} MATRIX</span>
           <span class="matrix-title">Steam Decision Core</span>
-          ${result.playerCount !== undefined && result.playerCount !== null ? `
-            <span class="player-count-badge" title="Current active players on Steam">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>
-              <span>${result.playerCount.toLocaleString()} Live</span>
-            </span>
-          ` : ''}
         </div>
         <div class="settings-link" title="Open Matrix Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
