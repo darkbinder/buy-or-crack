@@ -1234,21 +1234,37 @@
 
   function scrapeDrmNotice() {
     const notices = [];
-    const drmElements = document.querySelectorAll('.drm_notice, .custom_binding_info');
+    
+    // 1. Check all elements matching DRM notice classes (case-insensitive attribute selector and explicit uppercase)
+    const drmElements = document.querySelectorAll('.DRM_notice, .drm_notice, [class*="DRM_notice"], [class*="drm_notice"], .custom_binding_info');
     drmElements.forEach(el => {
       const text = el.textContent.trim().replace(/\s+/g, ' ');
-      if (text) notices.push(text);
+      if (text && !notices.includes(text)) notices.push(text);
     });
 
-    if (notices.length === 0) {
-      const specs = document.querySelectorAll('.game_area_details_specs, .details_block');
-      specs.forEach(el => {
-        const text = el.textContent;
-        if (/denuvo|vmprotect|arxan|third-party drm|3rd-party drm/i.test(text)) {
-          const matches = text.match(/(?:Incorporates\s+)?(?:3rd-party\s+DRM|DRM:[^.\n]+|Denuvo[^.\n]+)/i);
-          if (matches) notices.push(matches[0].trim());
+    // 2. Scan right column, specs, and details blocks
+    const scanContainers = document.querySelectorAll('.rightcol, .glance_ctn_responsive_right, #game_highlights, .details_block, .game_area_details_specs');
+    scanContainers.forEach(container => {
+      const text = container.textContent;
+      if (/denuvo|vmprotect|arxan|third-party drm|3rd-party drm/i.test(text)) {
+        const matches = text.match(/(?:Incorporates\s+)?(?:3rd-party\s+DRM|DRM:[^.\n\r]+|Denuvo[^.\n\r]+)/i);
+        if (matches && !notices.some(n => n.includes(matches[0].trim()))) {
+          notices.push(matches[0].trim().replace(/\s+/g, ' '));
         }
-      });
+      }
+    });
+
+    // 3. Fallback scan on the entire document body for Denuvo mentions
+    if (notices.length === 0 && document.body) {
+      const bodyText = document.body.textContent;
+      if (/denuvo/i.test(bodyText)) {
+        const match = bodyText.match(/Incorporates\s+3rd-party\s+DRM:\s*Denuvo[^\n\r.]*|Denuvo\s+Anti-tamper[^\n\r.]*/i);
+        if (match) {
+          notices.push(match[0].trim().replace(/\s+/g, ' '));
+        } else {
+          notices.push('Incorporates 3rd-party DRM: Denuvo Anti-tamper');
+        }
+      }
     }
 
     return notices.length > 0 ? notices.join('; ') : 'None detected';
@@ -1358,6 +1374,9 @@ Score the "Hassle of Cracking" (1 to 5) where:
 - 1 (Low hassle to crack): A crack or repack is confirmed available, the game has no intrusive DRM, is a static single-player game, receives few updates, does not use Steam Workshop for mods, and is simple to install once and play. Running a cracked copy is completely hassle-free. (Recommends CRACK).
 - 2 to 4: Intermediate hassle (e.g., cracked but updates frequently; or moderate modding required).
 
+CRITICAL RULES:
+- Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or 3rd-party DRM, you MUST NOT claim the game has "no DRM" or that standard Steam emulators work. Denuvo prevents standard emulation and represents maximum cracking hassle (score 5, BUY).
+
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
 2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like crack availability/DRM, update frequency, or Steam Workshop reliance).
@@ -1380,6 +1399,9 @@ Score the "Online Dependency / Buy Requirement" (1 to 5) where:
 - 5 (High online requirement / Must Buy): The game has uncracked DRM (e.g. Denuvo), server-side validations, live services, or is multiplayer matchmaking only. Cracking is impossible or makes the game completely unplayable. You MUST buy it to play it. (Recommends BUY).
 - 1 (Low online requirement / Safe to Crack): The game is confirmed cracked or DRM-free, fully playable offline, features a single-player focus, and does not require constant server connection or matchmaking. A cracked copy works flawlessly, so you can crack it to save money. (Recommends CRACK).
 - 2 to 4: Intermediate dependency (e.g., strong single-player campaign but has co-op or online features).
+
+CRITICAL RULES:
+- Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or uncracked DRM, you MUST NOT claim the game has "no DRM". Denuvo prevents cracking and mandates a score of 5 (BUY).
 
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
