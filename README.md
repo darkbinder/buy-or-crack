@@ -13,7 +13,12 @@ This repository contains a **Userscript** implementation of the tool: a zero-fri
   - **Expensive Games (>= Threshold):** Evaluated using the **Online Dependency** prompt (checks online validations, matchmaking, and launcher requirements).
 - **Token-Saving Bypasses:** Minimizes AI token usage by skipping calls for:
   - **Free-to-Play Games:** Automatically bypassed (since there's no purchasing/cracking decision).
+  - **Unreleased Games & Pre-Orders:** Bypassed automatically with an **Unreleased** banner until game files and launch DRM details are out.
   - **Early Access Games:** Bypassed by default (since they are unfinished). Includes a settings toggle to enable evaluations.
+- **DRM & Crack-Aware AI Matrix:**
+  - Scrapes 3rd-party DRM notices (e.g., Denuvo Anti-tamper) directly from the Steam store specs.
+  - Sourced from Altansar69's CS.RIN.RU Enhanced tags (or queries the CS.RIN.RU forum as a fallback) to detect crack availability (`[CRACKED]`, `[UNCRACKED]`, `[SteamStub]`).
+  - Feeds crack status and DRM facts directly into the Gemini prompt so hassle and online dependency scores account for whether cracking is impossible/difficult or hassle-free.
 - **Inline Custom Widget:** Injects a premium, glassmorphic UI card directly above the Steam buy button block.
 - **Isolated Styling:** Uses Shadow DOM to prevent Steam's CSS from breaking the widget's premium look.
 - **Dynamic Configuration:** Supports region country codes (CC), price thresholds, and custom evaluation switches directly inline.
@@ -53,11 +58,12 @@ Once configured, loading any Steam page initiates an analysis. The widget displa
 - **🏴‍☠️ CRACK IT:** If the AI score is $< 3$.
 - **Live Player Count:** Queries active online player numbers so you know if multiplayer is dead.
 - **Visual Gauge Score:** Integrates a score scale from $1$ (Low) to $5$ (High).
-- **Reasoning:** A concise explanation of the AI's logic (e.g., highlighting updates, Steam Workshop usage, etc.).
-- **Online Components Checklist:** A tags breakdown of active system components.
+- **Reasoning:** A concise explanation of the AI's logic (e.g., highlighting DRM status, crack availability, updates, Steam Workshop usage, etc.).
+- **Online Components & Protection Breakdown:** Badges indicating active features like Denuvo, confirmed cracks, workshop dependency, or offline play.
 
 ### Token-Saving Bypasses
 
 To minimize API token usage, the engine performs the following checks before invoking the Gemini AI:
 1. **Free-to-Play Bypass:** If a game's price is $0$ or its purchase label contains "Free", the evaluation exits early and renders a custom **Free-to-Play** banner. There is no buy/crack decision to make, so no tokens are consumed.
-2. **Early Access Bypass:** Since Early Access games are unfinished, the script skips evaluation by default and renders an **Early Access Bypass** banner. If you still want to evaluate an Early Access game, you can click **"Enable Early Access Evaluations"** directly on the card, or turn it on in the settings panel.
+2. **Unreleased Game Bypass:** If a game is unreleased ("Coming Soon", future release date, or Pre-Purchase only), the evaluation exits early and displays an **Unreleased** banner showing the planned release date. No tokens are consumed until the game launches.
+3. **Early Access Bypass:** Since Early Access games are unfinished, the script skips evaluation by default and renders an **Early Access Bypass** banner. If you still want to evaluate an Early Access game, you can click **"Enable Early Access Evaluations"** directly on the card, or turn it on in the settings panel.

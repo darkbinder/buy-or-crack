@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Buy or Crack Decision Matrix
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.2.0
 // @description  Evaluates whether to BUY or CRACK a Steam game directly from its Store page using Gemini AI.
 // @author       Ricco
 // @match        *://store.steampowered.com/app/*
@@ -10,6 +10,7 @@
 // @grant        GM_getValue
 // @connect      generativelanguage.googleapis.com
 // @connect      api.steampowered.com
+// @connect      cs.rin.ru
 // @run-at       document-end
 // @updateURL    https://raw.githubusercontent.com/darkbinder/buy-or-crack/main/steam_buy_or_crack.user.js
 // @downloadURL  https://raw.githubusercontent.com/darkbinder/buy-or-crack/main/steam_buy_or_crack.user.js
@@ -631,6 +632,10 @@
       background: linear-gradient(90deg, #f59e0b, #fbbf24, #d97706);
     }
 
+    .widget-card.unreleased-bypass::before {
+      background: linear-gradient(90deg, #8b5cf6, #a855f7, #6366f1);
+    }
+
     .recommendation-banner.bypass-banner {
       background: rgba(59, 130, 246, 0.08);
       border: 1px solid rgba(59, 130, 246, 0.2);
@@ -645,6 +650,14 @@
       color: #fbbf24;
       text-shadow: 0 0 10px rgba(251, 191, 36, 0.2);
       box-shadow: inset 0 0 12px rgba(245, 158, 11, 0.05);
+    }
+
+    .recommendation-banner.unreleased-banner {
+      background: rgba(139, 92, 246, 0.08);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      color: #a78bfa;
+      text-shadow: 0 0 10px rgba(167, 139, 250, 0.2);
+      box-shadow: inset 0 0 12px rgba(139, 92, 246, 0.05);
     }
   `;
   shadow.appendChild(style);
@@ -820,7 +833,13 @@
         return;
       }
 
-      // 2. Check if Early Access bypassed
+      // 2. Check if Unreleased / Coming Soon
+      if (gameData.isUnreleased) {
+        showBypass('UNRELEASED', gameData.name, gameData.releaseDate);
+        return;
+      }
+
+      // 3. Check if Early Access bypassed
       if (gameData.isEarlyAccess && !config.EVALUATE_EARLY_ACCESS) {
         showBypass('EARLY_ACCESS', gameData.name);
         return;
@@ -831,8 +850,19 @@
         return;
       }
 
-      const playerCount = await getPlayerCount(gameData.appId);
+      // Fetch player count and crack/DRM status
+      const [playerCount, rinFromDom] = await Promise.all([
+        getPlayerCount(gameData.appId),
+        Promise.resolve(getRinStatusFromDOM())
+      ]);
       gameData.playerCount = playerCount;
+
+      let crackStatus = rinFromDom;
+      if (!crackStatus) {
+        crackStatus = await fetchRinStatusFromAPI(gameData.appId, gameData.name);
+      }
+      gameData.crackStatus = crackStatus || 'Unknown / Not detected';
+      gameData.drmNotice = scrapeDrmNotice();
 
       const evaluation = await evaluateGameWithAI(gameData, config);
       evaluation.playerCount = playerCount;
@@ -908,7 +938,7 @@
     }
   }
 
-  function showBypass(type, gameName) {
+  function showBypass(type, gameName, extraInfo) {
     if (type === 'FREE_TO_PLAY') {
       widgetInner.className = 'widget-card bypass';
       evalView.innerHTML = `
@@ -925,6 +955,25 @@
         </p>
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <a class="settings-trigger" style="color: #60a5fa; cursor: pointer; font-size: 12px; text-decoration: underline;">Configure settings</a>
+        </div>
+      `;
+    } else if (type === 'UNRELEASED') {
+      widgetInner.className = 'widget-card unreleased-bypass';
+      const plannedDateStr = extraInfo ? ` (Planned: ${extraInfo})` : '';
+      evalView.innerHTML = `
+        <div class="recommendation-banner unreleased-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>⏳ UNRELEASED: ${gameName}${plannedDateStr}</span>
+        </div>
+        <p style="font-size: 13.5px; line-height: 1.5; color: #cbd5e1; margin-bottom: 12px;">
+          This game has not been released yet. Evaluations are bypassed to conserve Gemini AI tokens until the game officially launches.
+        </p>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size: 12px; color: #94a3b8;">Awaiting release binaries & DRM details</span>
+          <a class="settings-trigger" style="color: #a78bfa; cursor: pointer; font-size: 12px; text-decoration: underline;">Configure settings</a>
         </div>
       `;
     } else if (type === 'EARLY_ACCESS') {
@@ -999,6 +1048,11 @@
         if (text.includes('online') || text.includes('server') || text.includes('multiplayer') || text.includes('matchmaking')) {
           iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>`;
           addClass = 'active-feature';
+        } else if (text.includes('denuvo') || text.includes('drm') || text.includes('anti-tamper') || text.includes('uncracked')) {
+          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>`;
+          addClass = 'active-feature';
+        } else if (text.includes('cracked')) {
+          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
         } else if (text.includes('single') || text.includes('offline') || text.includes('no third-party')) {
           iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
         } else if (text.includes('save') || text.includes('workshop') || text.includes('mod')) {
@@ -1112,6 +1166,27 @@
 
     const isEarlyAccess = !!document.querySelector('.early_access_header');
     
+    // Detect if unreleased / coming soon
+    const comingSoonElem = document.querySelector('.game_area_comingsoon, .coming_soon');
+    const releaseDateElem = document.querySelector('.release_date .date');
+    const releaseDate = releaseDateElem ? releaseDateElem.textContent.trim() : '';
+
+    let isFutureDate = false;
+    if (releaseDate) {
+      const parsedDate = Date.parse(releaseDate);
+      if (!isNaN(parsedDate) && parsedDate > Date.now()) {
+        isFutureDate = true;
+      }
+    }
+
+    const isUnreleasedText = /coming soon|to be announced|tba|not yet released|planned release date/i.test(releaseDate);
+
+    const purchaseButtons = Array.from(document.querySelectorAll('.game_area_purchase_game .btn_addtocart, .game_area_purchase_game .btn_green_steamui'));
+    const hasPrePurchase = purchaseButtons.some(b => /pre-purchase|pre-order/i.test(b.textContent));
+    const hasBuyOrPlay = purchaseButtons.some(b => /buy|play game|add to cart/i.test(b.textContent) && !/pre-purchase|pre-order/i.test(b.textContent));
+
+    const isUnreleased = !!comingSoonElem || isUnreleasedText || isFutureDate || (hasPrePurchase && !hasBuyOrPlay);
+
     const pStrLower = priceString.toLowerCase();
     const isFree = priceNumeric === 0 || 
                    pStrLower.includes('free') || 
@@ -1129,6 +1204,8 @@
       categories: uniqueCategories,
       headerImage,
       isEarlyAccess,
+      isUnreleased,
+      releaseDate,
       isFree
     };
   }
@@ -1155,6 +1232,84 @@
     return isNaN(price) ? 0 : price;
   }
 
+  function scrapeDrmNotice() {
+    const notices = [];
+    const drmElements = document.querySelectorAll('.drm_notice, .custom_binding_info');
+    drmElements.forEach(el => {
+      const text = el.textContent.trim().replace(/\s+/g, ' ');
+      if (text) notices.push(text);
+    });
+
+    if (notices.length === 0) {
+      const specs = document.querySelectorAll('.game_area_details_specs, .details_block');
+      specs.forEach(el => {
+        const text = el.textContent;
+        if (/denuvo|vmprotect|arxan|third-party drm|3rd-party drm/i.test(text)) {
+          const matches = text.match(/(?:Incorporates\s+)?(?:3rd-party\s+DRM|DRM:[^.\n]+|Denuvo[^.\n]+)/i);
+          if (matches) notices.push(matches[0].trim());
+        }
+      });
+    }
+
+    return notices.length > 0 ? notices.join('; ') : 'None detected';
+  }
+
+  function getRinStatusFromDOM() {
+    const appNameElem = document.querySelector('#appHubAppName') || document.querySelector('.apphub_AppName');
+    if (!appNameElem) return null;
+    const text = appNameElem.textContent || '';
+    const tagMatches = text.match(/\[(CRACKED|UNCRACKED|SteamStub|Not on RIN|bypass|denuvo)\]/gi);
+    if (tagMatches && tagMatches.length > 0) {
+      return tagMatches.join(' ');
+    }
+    return null;
+  }
+
+  async function fetchRinStatusFromAPI(appId, appName) {
+    if (!appId) return null;
+    try {
+      const rinSearchUrl = `https://cs.rin.ru/forum/search.php?keywords=${appId}&fid%5B%5D=10&sr=topics&sf=firstpost`;
+      const response = await gmFetch(rinSearchUrl);
+      if (!response.ok) return null;
+
+      const html = await response.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      const secCheck = doc.querySelector('p');
+      if (secCheck && secCheck.textContent.includes('Security check')) {
+        return null;
+      }
+
+      const topics = doc.querySelectorAll('.titles:not(:first-child), .topictitle');
+      let matchingTopic = null;
+      if (appName) {
+        const cleanName = appName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        for (const topic of topics) {
+          const cleanTopic = topic.textContent.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanTopic.includes(cleanName) || cleanName.includes(cleanTopic)) {
+            matchingTopic = topic;
+            break;
+          }
+        }
+      }
+      if (!matchingTopic && topics.length > 0) {
+        matchingTopic = topics[0];
+      }
+
+      if (matchingTopic) {
+        const tags = matchingTopic.textContent.match(/(?<!^)\[([^\]]+)\]/g);
+        if (tags && tags.length > 0) {
+          return tags.join(' ');
+        }
+        return '[Topic Found - No Status Tag]';
+      }
+      return '[Not on RIN]';
+    } catch (err) {
+      console.warn('Steam Matrix: CS.RIN.RU query failed or blocked:', err);
+      return null;
+    }
+  }
+
   // --- API COMMUNICATIONS ---
 
   async function getPlayerCount(appId) {
@@ -1179,6 +1334,8 @@
 
     const genresStr = (gameData.genres || []).join(', ') || 'N/A';
     const categoriesStr = (gameData.categories || []).join(', ') || 'N/A';
+    const drmStr = gameData.drmNotice || 'None detected';
+    const crackStatusStr = gameData.crackStatus || 'Unknown / Not detected';
 
     let prompt = '';
 
@@ -1193,15 +1350,18 @@ Game details:
 - Genres: ${genresStr}
 - Categories: ${categoriesStr}
 - Active Steam Players (Online now): ${gameData.playerCount !== null ? gameData.playerCount : 'Unknown'} (Note: If this is very low, e.g. < 100, online multiplayer is effectively dead, which might impact the value of buying it for matchmaking).
+- DRM / Protection Notice: ${drmStr}
+- Community Crack Status (CS.RIN.RU): ${crackStatusStr}
 
 Score the "Hassle of Cracking" (1 to 5) where:
-- 5 (High hassle to crack): The game has frequent updates that break compatibility, relies heavily on Steam Workshop for essential mods, or relies on Steam Cloud saves. It is a headache to maintain a cracked copy. (Recommends BUY).
-- 1 (Low hassle to crack): The game is a static single-player game, receives no updates, does not use Steam Workshop for mods, and is simple to install once and play. Running a cracked copy is completely hassle-free. (Recommends CRACK).
+- 5 (High hassle to crack): The game has active uncracked DRM (e.g. Denuvo, VMProtect, or uncracked status on CS.RIN.RU), requires complex hypervisor or token bypasses, has frequent updates that break compatibility, relies heavily on Steam Workshop for essential mods, or relies on Steam Cloud saves. Running or maintaining a cracked copy is impossible or a major headache. (Recommends BUY).
+- 1 (Low hassle to crack): A crack or repack is confirmed available, the game has no intrusive DRM, is a static single-player game, receives few updates, does not use Steam Workshop for mods, and is simple to install once and play. Running a cracked copy is completely hassle-free. (Recommends CRACK).
+- 2 to 4: Intermediate hassle (e.g., cracked but updates frequently; or moderate modding required).
 
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
-2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like lack of Steam Workshop, update frequency, or simple static play).
-3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's system and online components, e.g. "No Steam Workshop mods", "Offline single-player", "No third-party launcher", "Steam Cloud saves enabled", "Frequent patches/updates").`;
+2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like crack availability/DRM, update frequency, or Steam Workshop reliance).
+3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's system, DRM, and online components, e.g. "Denuvo Anti-tamper", "Confirmed Cracked", "No Steam Workshop mods", "Offline single-player", "Frequent patches/updates").`;
     } else {
       prompt = `You are evaluating a game for the Steam Purchase Decision Matrix.
 The game is expensive/over the threshold of ${threshold} ${config.STEAM_CC}. You need to score the "Online Dependency / Buy Requirement" on a scale of 1 to 5:
@@ -1213,15 +1373,18 @@ Game details:
 - Genres: ${genresStr}
 - Categories: ${categoriesStr}
 - Active Steam Players (Online now): ${gameData.playerCount !== null ? gameData.playerCount : 'Unknown'} (Note: If this is very low, e.g. < 100, online multiplayer is effectively dead, which might impact the value of buying it for matchmaking).
+- DRM / Protection Notice: ${drmStr}
+- Community Crack Status (CS.RIN.RU): ${crackStatusStr}
 
-Score the "Online Dependency" (1 to 5) where:
-- 5 (High online requirement): The game has server-side validations, live services, or is multiplayer matchmaking only. Cracking is impossible or makes the game completely unplayable. You MUST buy it to play it. (Recommends BUY).
-- 1 (Low online requirement): The game is fully playable offline, features a single-player focus, and does not require constant server connection or matchmaking. A cracked copy works flawlessly, so you can crack it to save money. (Recommends CRACK).
+Score the "Online Dependency / Buy Requirement" (1 to 5) where:
+- 5 (High online requirement / Must Buy): The game has uncracked DRM (e.g. Denuvo), server-side validations, live services, or is multiplayer matchmaking only. Cracking is impossible or makes the game completely unplayable. You MUST buy it to play it. (Recommends BUY).
+- 1 (Low online requirement / Safe to Crack): The game is confirmed cracked or DRM-free, fully playable offline, features a single-player focus, and does not require constant server connection or matchmaking. A cracked copy works flawlessly, so you can crack it to save money. (Recommends CRACK).
+- 2 to 4: Intermediate dependency (e.g., strong single-player campaign but has co-op or online features).
 
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
-2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like single-player focus, offline viability, server-side validations, or multiplayer requirements).
-3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's system and online components, e.g. "Server-side character validations", "Always-online required", "Peer-to-peer matchmaking", "Requires EA App launcher").`;
+2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like single-player focus, offline viability, DRM status, server-side validations, or multiplayer requirements).
+3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's system, DRM, and online components, e.g. "Denuvo DRM active", "Confirmed cracked release", "Server-side validations", "Always-online required", "Peer-to-peer matchmaking").`;
     }
 
     const requestBody = {
