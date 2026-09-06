@@ -59,7 +59,10 @@ Once configured, loading any Steam page initiates an analysis. The widget displa
 - **Live Player Count:** Queries active online player numbers so you know if multiplayer is dead.
 - **Visual Gauge Score:** Integrates a score scale from $1$ (Low) to $5$ (High).
 - **Reasoning:** A concise explanation of the AI's logic (e.g., highlighting DRM status, crack availability, updates, Steam Workshop usage, etc.).
-- **Online Components & Protection Breakdown:** Badges indicating active features like Denuvo, confirmed cracks, workshop dependency, or offline play.
+- **Three-Tier Online Components & Protection Badges:**
+  - 🔴 **Restrictions & Hurdles (Rose/Red):** Denuvo Anti-tamper, 3rd-party launchers, uncracked/hypervisor status, and online multiplayer/matchmaking (where cracking prevents access to the core loop).
+  - 🟢 **Freedom & Benefits (Green):** Standalone offline campaigns, DRM-free/Standard Steam, confirmed cracked status.
+  - 🟣 **Ecosystem Features (Purple):** Steam Workshop mod support, Steam Cloud saves, controller support.
 
 ### Token-Saving Bypasses
 

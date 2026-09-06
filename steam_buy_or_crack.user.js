@@ -381,6 +381,7 @@
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(255, 255, 255, 0.05);
       color: #94a3b8;
+      transition: all 0.2s ease;
     }
 
     .component-badge svg {
@@ -389,9 +390,22 @@
       flex-shrink: 0;
     }
 
-    .component-badge.active-feature {
-      background: rgba(139, 92, 246, 0.05);
-      border-color: rgba(139, 92, 246, 0.15);
+    /* Three-Tier Badge Styling */
+    .component-badge.badge-restriction {
+      background: rgba(244, 63, 94, 0.08);
+      border-color: rgba(244, 63, 94, 0.25);
+      color: #fb7185;
+    }
+
+    .component-badge.badge-benefit {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.25);
+      color: #34d399;
+    }
+
+    .component-badge.badge-feature {
+      background: rgba(139, 92, 246, 0.08);
+      border-color: rgba(139, 92, 246, 0.2);
       color: #c084fc;
     }
 
@@ -867,7 +881,7 @@
       const evaluation = await evaluateGameWithAI(gameData, config);
       evaluation.playerCount = playerCount;
 
-      renderDecision(evaluation, gameData.name);
+      renderDecision(evaluation, gameData);
     } catch (err) {
       console.error('Error evaluating game:', err);
       showError('API_ERROR', err.message || 'An unexpected error occurred during API evaluation.');
@@ -1009,7 +1023,106 @@
     }
   }
 
-  function renderDecision(result, gameName) {
+  function buildComponentBadges(gameData, result) {
+    const badges = [];
+    const seen = new Set();
+
+    function addBadge(text, type, iconSvg) {
+      if (!text) return;
+      const clean = text.trim();
+      const key = clean.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      badges.push({ text: clean, type, iconSvg });
+    }
+
+    const ICONS = {
+      lock: `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>`,
+      server: `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>`,
+      shield: `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
+      check: `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+      gear: `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><circle cx="12" cy="12" r="3"></circle></svg>`,
+      default: `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`
+    };
+
+    const gData = typeof gameData === 'object' ? gameData : {};
+    const drmRaw = gData.drmNotice || '';
+    const drmLower = drmRaw.toLowerCase();
+
+    // 1. DETERMINISTIC DRM BADGES
+    if (drmLower.includes('denuvo')) {
+      addBadge('Denuvo Anti-tamper', 'restriction', ICONS.lock);
+    } else if (drmLower.includes('vmprotect')) {
+      addBadge('VMProtect DRM Active', 'restriction', ICONS.lock);
+    } else if (drmLower && drmLower !== 'none detected') {
+      const notices = drmRaw.split(';');
+      notices.forEach(n => {
+        const trimmed = n.trim();
+        if (trimmed) addBadge(trimmed, 'restriction', ICONS.lock);
+      });
+    } else {
+      addBadge('Standard Steam (No 3rd-Party DRM)', 'benefit', ICONS.check);
+    }
+
+    // 2. DETERMINISTIC CRACK STATUS BADGE (CS.RIN.RU / Altansar)
+    const crackRaw = gData.crackStatus || '';
+    const crackLower = crackRaw.toLowerCase();
+    if (crackLower.includes('uncracked') || crackLower.includes('hypervisor')) {
+      addBadge(`Status: ${crackRaw}`, 'restriction', ICONS.lock);
+    } else if (crackLower.includes('cracked') || crackLower.includes('steamstub')) {
+      addBadge(`Status: ${crackRaw}`, 'benefit', ICONS.shield);
+    }
+
+    // 3. CURATED AI TAGS
+    const aiComponents = result.onlineComponents || [];
+    aiComponents.forEach(comp => {
+      const lower = comp.toLowerCase().trim();
+
+      // Guard: Filter out contradictory DRM claims if Denuvo or 3rd-party DRM is present
+      const hasDrm = drmLower && drmLower !== 'none detected';
+      if (hasDrm && (lower.includes('no drm') || lower.includes('no intrusive drm') || lower.includes('drm-free') || lower.includes('without any crack hassle'))) {
+        return; // drop contradiction!
+      }
+      // Guard: Avoid duplicate Denuvo badge if already added
+      if (lower.includes('denuvo') && seen.has('denuvo anti-tamper')) {
+        return;
+      }
+
+      // Classification:
+      // A. Restrictions: Online multiplayer, matchmaking, server dependency, live services, anticheat, launchers
+      const isOnline = lower.includes('online') || lower.includes('server') || lower.includes('multiplayer') || lower.includes('matchmaking') || lower.includes('live-service') || lower.includes('live service');
+      const isDrmOrAntiCheat = lower.includes('denuvo') || lower.includes('anticheat') || lower.includes('anti-cheat') || lower.includes('battleye') || lower.includes('easy anti') || (lower.includes('drm') && !lower.includes('no ') && !lower.includes('free'));
+      const isAccountOrLauncher = lower.includes('launcher') || lower.includes('account required') || lower.includes('always-online');
+
+      if (isOnline || isDrmOrAntiCheat || isAccountOrLauncher) {
+        addBadge(comp, 'restriction', isOnline ? ICONS.server : ICONS.lock);
+      }
+      // B. Benefits: Offline single-player, standalone, local co-op, DRM-free, cracked
+      else if (
+        lower.includes('offline') || 
+        lower.includes('single-player') || 
+        lower.includes('single player') || 
+        lower.includes('campaign') || 
+        lower.includes('standalone') || 
+        lower.includes('local co-op') || 
+        lower.includes('split-screen') || 
+        lower.includes('no third-party') || 
+        lower.includes('no 3rd-party') ||
+        lower.includes('cracked')
+      ) {
+        addBadge(comp, 'benefit', lower.includes('cracked') ? ICONS.shield : ICONS.check);
+      }
+      // C. Ecosystem / Neutral Features: Workshop mods, cloud saves, controllers
+      else {
+        addBadge(comp, 'feature', lower.includes('mod') || lower.includes('workshop') ? ICONS.gear : ICONS.default);
+      }
+    });
+
+    return badges;
+  }
+
+  function renderDecision(result, gameData) {
+    const gameName = typeof gameData === 'object' ? gameData.name : gameData;
     const isBuy = result.decisionScore >= 3;
     widgetInner.className = `widget-card ${isBuy ? 'buy' : 'crack'}`;
 
@@ -1038,37 +1151,13 @@
 
     const fillPercent = (result.decisionScore / 5) * 100;
 
-    let componentsHtml = '';
-    if (result.onlineComponents && result.onlineComponents.length > 0) {
-      componentsHtml = result.onlineComponents.map(comp => {
-        const text = comp.toLowerCase();
-        let iconSvg = '';
-        let addClass = '';
-
-        if (text.includes('online') || text.includes('server') || text.includes('multiplayer') || text.includes('matchmaking')) {
-          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>`;
-          addClass = 'active-feature';
-        } else if (text.includes('denuvo') || text.includes('drm') || text.includes('anti-tamper') || text.includes('uncracked')) {
-          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>`;
-          addClass = 'active-feature';
-        } else if (text.includes('cracked')) {
-          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
-        } else if (text.includes('single') || text.includes('offline') || text.includes('no third-party')) {
-          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
-        } else if (text.includes('save') || text.includes('workshop') || text.includes('mod')) {
-          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-        } else {
-          iconSvg = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`;
-        }
-
-        return `
-          <div class="component-badge ${addClass}">
-            ${iconSvg}
-            <span>${comp}</span>
-          </div>
-        `;
-      }).join('');
-    }
+    const badges = buildComponentBadges(gameData, result);
+    const componentsHtml = badges.map(badge => `
+      <div class="component-badge badge-${badge.type}">
+        ${badge.iconSvg}
+        <span>${badge.text}</span>
+      </div>
+    `).join('');
 
     const evaluationLabel = result.evaluationType === 'HASSLE' ? 'Hassle of Cracking' : 'Online Dependency';
 
@@ -1376,11 +1465,12 @@ Score the "Hassle of Cracking" (1 to 5) where:
 
 CRITICAL RULES:
 - Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or 3rd-party DRM, you MUST NOT claim the game has "no DRM" or that standard Steam emulators work. Denuvo prevents standard emulation and represents maximum cracking hassle (score 5, BUY).
+- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Peer-to-peer co-op", "Dedicated multiplayer matchmaking", "Steam Workshop mod support", "Steam Cloud sync"). DO NOT make contradictory claims about DRM or anti-tamper (e.g. never output "No DRM detected" if Denuvo or 3rd-party DRM is present).
 
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
 2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like crack availability/DRM, update frequency, or Steam Workshop reliance).
-3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's system, DRM, and online components, e.g. "Denuvo Anti-tamper", "Confirmed Cracked", "No Steam Workshop mods", "Offline single-player", "Frequent patches/updates").`;
+3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's gameplay connectivity, e.g. "Offline single-player campaign", "Online co-op multiplayer", "Steam Workshop mods", "Cloud saves enabled", "Frequent patches/updates").`;
     } else {
       prompt = `You are evaluating a game for the Steam Purchase Decision Matrix.
 The game is expensive/over the threshold of ${threshold} ${config.STEAM_CC}. You need to score the "Online Dependency / Buy Requirement" on a scale of 1 to 5:
@@ -1402,11 +1492,12 @@ Score the "Online Dependency / Buy Requirement" (1 to 5) where:
 
 CRITICAL RULES:
 - Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or uncracked DRM, you MUST NOT claim the game has "no DRM". Denuvo prevents cracking and mandates a score of 5 (BUY).
+- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Online matchmaking required", "Server-side character saves", "P2P multiplayer"). DO NOT output claims like "No DRM detected" if Denuvo or uncracked DRM is listed.
 
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
 2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like single-player focus, offline viability, DRM status, server-side validations, or multiplayer requirements).
-3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's system, DRM, and online components, e.g. "Denuvo DRM active", "Confirmed cracked release", "Server-side validations", "Always-online required", "Peer-to-peer matchmaking").`;
+3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's gameplay connectivity, e.g. "Online matchmaking only", "Server-side validations", "Offline campaign", "Always-online required", "Peer-to-peer co-op").`;
     }
 
     const requestBody = {
