@@ -1563,19 +1563,22 @@ Provide:
         const textResponse = result.candidates[0].content.parts[0].text;
         const parsedResponse = JSON.parse(textResponse);
 
-        // Anti-hallucination guard: If strong DRM exists but LLM ignores it
+        // Anti-hallucination guard: If strong DRM exists, never allow "no DRM" claims
         const hasStrongDrm = drmStr && /denuvo|vmprotect|arxan/i.test(drmStr);
         const isCracked = crackStatusStr && /cracked/i.test(crackStatusStr) && !/uncracked/i.test(crackStatusStr);
         
-        if (hasStrongDrm && !isCracked) {
+        if (hasStrongDrm) {
           const rLower = parsedResponse.reasoning.toLowerCase();
           const noDrmRegex = /no\s+(?:[a-z-]+\s+)*drm|drm-free|drm\s*free|lacks\s+drm|without\s+(?:any\s+)?(?:[a-z-]+\s+)*drm|none\s+detected/i;
           const contradicts = noDrmRegex.test(rLower);
           
-          if (parsedResponse.decision_score < 3 || contradicts) {
+          if (!isCracked && (parsedResponse.decision_score < 3 || contradicts)) {
             console.log("Matrix guard triggered: overriding hallucinatory LLM response regarding strong DRM.");
             parsedResponse.decision_score = 5;
             parsedResponse.reasoning = `This game incorporates ${drmStr.split(';')[0]}, which makes it highly difficult to crack. Buying is recommended.`;
+          } else if (isCracked && contradicts) {
+            console.log("Matrix guard triggered: fixing hallucinated reasoning for cracked game with strong DRM.");
+            parsedResponse.reasoning = parsedResponse.reasoning.replace(new RegExp(noDrmRegex, 'gi'), 'Although it has strong DRM, it');
           }
 
           // Clean up hallucinated features as well
