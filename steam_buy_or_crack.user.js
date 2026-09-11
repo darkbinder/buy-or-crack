@@ -1563,6 +1563,21 @@ Provide:
         const textResponse = result.candidates[0].content.parts[0].text;
         const parsedResponse = JSON.parse(textResponse);
 
+        // Anti-hallucination guard: If strong DRM exists but LLM ignores it
+        const hasStrongDrm = drmStr && /denuvo|vmprotect|arxan/i.test(drmStr);
+        const isCracked = crackStatusStr && /cracked/i.test(crackStatusStr) && !/uncracked/i.test(crackStatusStr);
+        
+        if (hasStrongDrm && !isCracked) {
+          const rLower = parsedResponse.reasoning.toLowerCase();
+          const contradicts = rLower.includes('no drm') || rLower.includes('no intrusive drm') || rLower.includes('drm-free') || rLower.includes('without any crack hassle') || rLower.includes('lacks drm');
+          
+          if (parsedResponse.decision_score < 3 || contradicts) {
+            console.log("Matrix guard triggered: overriding hallucinatory LLM response regarding strong DRM.");
+            parsedResponse.decision_score = 5;
+            parsedResponse.reasoning = `This game incorporates ${drmStr.split(';')[0]}, which makes it highly difficult to crack. Buying is recommended.`;
+          }
+        }
+
         return {
           evaluationType: underThreshold ? 'HASSLE' : 'ONLINE_DEPENDENCY',
           decisionScore: parsedResponse.decision_score,
