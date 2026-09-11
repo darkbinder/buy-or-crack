@@ -1569,12 +1569,22 @@ Provide:
         
         if (hasStrongDrm && !isCracked) {
           const rLower = parsedResponse.reasoning.toLowerCase();
-          const contradicts = rLower.includes('no drm') || rLower.includes('no intrusive drm') || rLower.includes('drm-free') || rLower.includes('without any crack hassle') || rLower.includes('lacks drm');
+          const noDrmRegex = /no\s+(?:[a-z-]+\s+)*drm|drm-free|drm\s*free|lacks\s+drm|without\s+(?:any\s+)?(?:[a-z-]+\s+)*drm|none\s+detected/i;
+          const contradicts = noDrmRegex.test(rLower);
           
           if (parsedResponse.decision_score < 3 || contradicts) {
             console.log("Matrix guard triggered: overriding hallucinatory LLM response regarding strong DRM.");
             parsedResponse.decision_score = 5;
             parsedResponse.reasoning = `This game incorporates ${drmStr.split(';')[0]}, which makes it highly difficult to crack. Buying is recommended.`;
+          }
+
+          // Clean up hallucinated features as well
+          if (Array.isArray(parsedResponse.online_components)) {
+            parsedResponse.online_components = parsedResponse.online_components.filter(c => !noDrmRegex.test(c));
+            // Ensure at least one element mentions the strong DRM if we removed the hallucinated one
+            if (!parsedResponse.online_components.some(c => /denuvo|vmprotect|arxan|drm/i.test(c))) {
+               parsedResponse.online_components.unshift(`Protected by ${drmStr.split(' ')[0] || 'Strong'} DRM`);
+            }
           }
         }
 
