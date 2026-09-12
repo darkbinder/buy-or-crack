@@ -1343,16 +1343,19 @@
       }
     });
 
-    // 3. Fallback scan on the entire document body for Denuvo mentions
-    if (notices.length === 0 && document.body) {
+    // 3. Fallback scan on the entire document body for strong DRM mentions
+    if (document.body) {
       const bodyText = document.body.textContent;
-      if (/denuvo/i.test(bodyText)) {
+      if (/denuvo/i.test(bodyText) && !notices.some(n => /denuvo/i.test(n))) {
         const match = bodyText.match(/Incorporates\s+3rd-party\s+DRM:\s*Denuvo[^\n\r.]*|Denuvo\s+Anti-tamper[^\n\r.]*/i);
         if (match) {
           notices.push(match[0].trim().replace(/\s+/g, ' '));
         } else {
           notices.push('Incorporates 3rd-party DRM: Denuvo Anti-tamper');
         }
+      }
+      if (/vmprotect/i.test(bodyText) && !notices.some(n => /vmprotect/i.test(n))) {
+        notices.push('VMProtect DRM');
       }
     }
 
