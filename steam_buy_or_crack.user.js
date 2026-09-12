@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Buy or Crack Decision Matrix
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.3.0
 // @description  Evaluates whether to BUY or CRACK a Steam game directly from its Store page using Gemini AI.
 // @author       Ricco
 // @match        *://store.steampowered.com/app/*
@@ -1050,6 +1050,9 @@
     const drmLower = drmRaw.toLowerCase();
 
     // 1. DETERMINISTIC DRM BADGES
+    // [DEBUG] Always add what the scraper found so user can see it
+    addBadge(`[DEBUG DRM SCRAPED]: ${drmRaw.substring(0, 75)}`, 'feature', ICONS.gear);
+    
     if (drmLower.includes('denuvo')) {
       addBadge('Denuvo Anti-tamper', 'restriction', ICONS.lock);
     } else if (drmLower.includes('vmprotect')) {
