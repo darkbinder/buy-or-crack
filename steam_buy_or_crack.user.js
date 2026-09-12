@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Buy or Crack Decision Matrix
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.3.1
 // @description  Evaluates whether to BUY or CRACK a Steam game directly from its Store page using Gemini AI.
 // @author       Ricco
 // @match        *://store.steampowered.com/app/*
@@ -719,6 +719,10 @@
         <input type="checkbox" id="input-early-access">
         <label for="input-early-access">Evaluate Early Access Games</label>
       </div>
+      <div class="form-group" style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+        <label style="color: #64748b; font-size: 11px;">Scraped DRM (Debug)</label>
+        <div id="debug-drm-output" style="font-size: 12px; color: #94a3b8; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; word-break: break-all; min-height: 20px;"></div>
+      </div>
       <div class="form-actions">
         <button id="btn-cancel-settings" class="btn btn-secondary">Cancel</button>
         <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
@@ -877,6 +881,9 @@
       }
       gameData.crackStatus = crackStatus || 'Unknown / Not detected';
       gameData.drmNotice = scrapeDrmNotice();
+      
+      const debugEl = shadow.querySelector('#debug-drm-output');
+      if (debugEl) debugEl.textContent = gameData.drmNotice;
 
       const evaluation = await evaluateGameWithAI(gameData, config);
       evaluation.playerCount = playerCount;
@@ -1050,9 +1057,6 @@
     const drmLower = drmRaw.toLowerCase();
 
     // 1. DETERMINISTIC DRM BADGES
-    // [DEBUG] Always add what the scraper found so user can see it
-    addBadge(`[DEBUG DRM SCRAPED]: ${drmRaw.substring(0, 75)}`, 'feature', ICONS.gear);
-    
     if (drmLower.includes('denuvo')) {
       addBadge('Denuvo Anti-tamper', 'restriction', ICONS.lock);
     } else if (drmLower.includes('vmprotect')) {
