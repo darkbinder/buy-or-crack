@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Buy or Crack Decision Matrix
 // @namespace    http://tampermonkey.net/
-// @version      1.3.1
+// @version      1.3.2
 // @description  Evaluates whether to BUY or CRACK a Steam game directly from its Store page using Gemini AI.
 // @author       Ricco
 // @match        *://store.steampowered.com/app/*
@@ -1085,8 +1085,15 @@
     aiComponents.forEach(comp => {
       const lower = comp.toLowerCase().trim();
 
-      // Guard: Filter out contradictory DRM claims if Denuvo or 3rd-party DRM is present
+      // Guard: Filter out contradictory DRM claims
       const hasDrm = drmLower && drmLower !== 'none detected';
+      const hasStrongDrm = drmLower && /denuvo|vmprotect|arxan/i.test(drmLower);
+
+      // If Steam page does NOT have strong DRM, never allow the AI to invent a Denuvo/VMProtect badge!
+      if (!hasStrongDrm && /denuvo|vmprotect|arxan/i.test(lower)) {
+        return; // drop hallucinated Denuvo badge!
+      }
+
       if (hasDrm && (lower.includes('no drm') || lower.includes('no intrusive drm') || lower.includes('drm-free') || lower.includes('without any crack hassle'))) {
         return; // drop contradiction!
       }
@@ -1331,40 +1338,51 @@
   function scrapeDrmNotice() {
     const notices = [];
     
+    // Helper: Steam reuses the .DRM_notice CSS class for 3rd-party EULAs as well.
+    // Pure software licenses (EULAs) are not DRM, and shouldn't trigger DRM warnings or override "Standard Steam".
+    const isPureEula = (text) => {
+      const lower = text.toLowerCase();
+      const hasEula = lower.includes('eula') || lower.includes('agreement to a 3rd-party') || lower.includes('agreement to an eula');
+      const hasRealDrm = lower.includes('denuvo') || lower.includes('vmprotect') || lower.includes('arxan') || lower.includes('securom') || lower.includes('drm') || lower.includes('activation limit') || lower.includes('account');
+      return hasEula && !hasRealDrm;
+    };
+
     // 1. Check all elements matching DRM notice classes (case-insensitive attribute selector and explicit uppercase)
     const drmElements = document.querySelectorAll('.DRM_notice, .drm_notice, [class*="DRM_notice"], [class*="drm_notice"], .custom_binding_info');
     drmElements.forEach(el => {
       const text = el.textContent.trim().replace(/\s+/g, ' ');
-      if (text && !notices.includes(text)) notices.push(text);
+      if (text && !isPureEula(text) && !notices.includes(text)) {
+        notices.push(text);
+      }
     });
 
-    // 2. Scan right column, specs, and details blocks
-    const scanContainers = document.querySelectorAll('.rightcol, .glance_ctn_responsive_right, #game_highlights, .details_block, .game_area_details_specs');
+    // 2. Scan right column, specs, details, and purchase blocks (official info containers, excluding user reviews!)
+    const scanContainers = document.querySelectorAll('.rightcol, .glance_ctn_responsive_right, #game_highlights, .details_block, .game_area_details_specs, #game_area_purchase');
     scanContainers.forEach(container => {
       const text = container.textContent;
       if (/denuvo|vmprotect|arxan|third-party drm|3rd-party drm/i.test(text)) {
-        const matches = text.match(/(?:Incorporates\s+)?(?:3rd-party\s+DRM|DRM:[^.\n\r]+|Denuvo[^.\n\r]+)/i);
+        const matches = text.match(/(?:Incorporates\s+)?(?:3rd-party\s+DRM|DRM:[^.\n\r]+|Denuvo[^.\n\r]+|VMProtect[^.\n\r]+)/i);
         if (matches && !notices.some(n => n.includes(matches[0].trim()))) {
           notices.push(matches[0].trim().replace(/\s+/g, ' '));
         }
       }
     });
 
-    // 3. Fallback scan on the entire document body for strong DRM mentions
-    if (document.body) {
-      const bodyText = document.body.textContent;
-      if (/denuvo/i.test(bodyText) && !notices.some(n => /denuvo/i.test(n))) {
-        const match = bodyText.match(/Incorporates\s+3rd-party\s+DRM:\s*Denuvo[^\n\r.]*|Denuvo\s+Anti-tamper[^\n\r.]*/i);
+    // 3. Fallback scan on the official game info containers (strictly avoids user reviews where players discuss DRM)
+    scanContainers.forEach(container => {
+      const text = container.textContent;
+      if (/denuvo/i.test(text) && !notices.some(n => /denuvo/i.test(n))) {
+        const match = text.match(/Incorporates\s+3rd-party\s+DRM:\s*Denuvo[^\n\r.]*|Denuvo\s+Anti-tamper[^\n\r.]*/i);
         if (match) {
           notices.push(match[0].trim().replace(/\s+/g, ' '));
         } else {
           notices.push('Incorporates 3rd-party DRM: Denuvo Anti-tamper');
         }
       }
-      if (/vmprotect/i.test(bodyText) && !notices.some(n => /vmprotect/i.test(n))) {
+      if (/vmprotect/i.test(text) && !notices.some(n => /vmprotect/i.test(n))) {
         notices.push('VMProtect DRM');
       }
-    }
+    });
 
     return notices.length > 0 ? notices.join('; ') : 'None detected';
   }
@@ -1475,7 +1493,8 @@ Score the "Hassle of Cracking" (1 to 5) where:
 
 CRITICAL RULES:
 - Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or 3rd-party DRM, you MUST NOT claim the game has "no DRM" or that standard Steam emulators work. Denuvo prevents standard emulation and represents maximum cracking hassle (score 5, BUY).
-- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Peer-to-peer co-op", "Dedicated multiplayer matchmaking", "Steam Workshop mod support", "Steam Cloud sync"). DO NOT make contradictory claims about DRM or anti-tamper (e.g. never output "No DRM detected" if Denuvo or 3rd-party DRM is present).
+- If "DRM / Protection Notice" is "None detected", you MUST NOT claim the game has Denuvo, VMProtect, or 3rd-party DRM. Steam contractually discloses all 3rd-party DRM; if not listed, the game does NOT have Denuvo. Do NOT rely on outdated memory or past editions (e.g. games that removed Denuvo or new editions).
+- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Peer-to-peer co-op", "Dedicated multiplayer matchmaking", "Steam Workshop mod support", "Steam Cloud sync"). DO NOT make contradictory claims about DRM or anti-tamper (never output "No DRM detected" if Denuvo is present, and never output "Denuvo" if no DRM is listed).
 
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
@@ -1502,7 +1521,8 @@ Score the "Online Dependency / Buy Requirement" (1 to 5) where:
 
 CRITICAL RULES:
 - Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or uncracked DRM, you MUST NOT claim the game has "no DRM". Denuvo prevents cracking and mandates a score of 5 (BUY).
-- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Online matchmaking required", "Server-side character saves", "P2P multiplayer"). DO NOT output claims like "No DRM detected" if Denuvo or uncracked DRM is listed.
+- If "DRM / Protection Notice" is "None detected", you MUST NOT claim the game has Denuvo, VMProtect, or uncracked DRM. Steam contractually discloses all 3rd-party DRM; if not listed, the game does NOT have Denuvo. Do NOT rely on outdated memory or past editions.
+- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Online matchmaking required", "Server-side character saves", "P2P multiplayer"). DO NOT output claims like "No DRM detected" if Denuvo is listed, and never output "Denuvo" if no DRM is listed.
 
 Provide:
 1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
@@ -1598,6 +1618,39 @@ Provide:
             if (!parsedResponse.online_components.some(c => /denuvo|vmprotect|arxan|drm/i.test(c))) {
                parsedResponse.online_components.unshift(`Protected by ${drmStr.split(' ')[0] || 'Strong'} DRM`);
             }
+          }
+        } else {
+          // Guard: If Steam page does NOT have Denuvo/VMProtect/Arxan, prevent AI from hallucinating that it does!
+          const rLower = parsedResponse.reasoning.toLowerCase();
+          const falseDrmRegex = /\b(?:denuvo(?:\s+anti-tamper)?|vmprotect|arxan)\b/i;
+          
+          if (falseDrmRegex.test(rLower)) {
+            console.log("Matrix guard triggered: AI hallucinated Denuvo/DRM when none exists on Steam page. Correcting reasoning.");
+            parsedResponse.reasoning = parsedResponse.reasoning
+              .replace(/incorporates\s+3rd-party\s+drm:\s*denuvo[^\n\r.,]*/gi, 'has no 3rd-party DRM')
+              .replace(/incorporates\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'has standard Steam protection')
+              .replace(/features\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'features standard Steam protection')
+              .replace(/protected\s+by\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'free of 3rd-party DRM')
+              .replace(/uses\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'uses standard Steam protection')
+              .replace(/denuvo\s+anti-tamper\s+drm/gi, 'standard Steam protection')
+              .replace(/denuvo\s+anti-tamper/gi, 'standard Steam protection')
+              .replace(/denuvo\s+drm/gi, 'standard Steam protection')
+              .replace(/\bdenuvo\b/gi, 'standard Steam');
+
+            const catLower = (gameData.categories || []).join(' ').toLowerCase();
+            const descLower = (gameData.description || '').toLowerCase();
+            const isSinglePlayer = catLower.includes('single-player') || catLower.includes('single player') || descLower.includes('single-player');
+            
+            // If the score was pushed to BUY (>= 3) purely due to hallucinated Denuvo on a single-player game:
+            if (isSinglePlayer && parsedResponse.decision_score >= 3) {
+              parsedResponse.decision_score = 1;
+              parsedResponse.reasoning += " (Note: No Denuvo or 3rd-party DRM detected on Steam; single-player content is playable offline).";
+            }
+          }
+
+          // Clean up hallucinated Denuvo tags from online_components
+          if (Array.isArray(parsedResponse.online_components)) {
+            parsedResponse.online_components = parsedResponse.online_components.filter(c => !falseDrmRegex.test(c));
           }
         }
 
