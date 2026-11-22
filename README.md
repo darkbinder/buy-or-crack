@@ -11,11 +11,12 @@ This repository contains a **Userscript** implementation of the tool: a zero-fri
 - **Unified Multi-Factor Decision Matrix:** Evaluates every game across three core pillars alongside price tier, active discounts, Steam reviews, and live multiplayer health:
   - **Crack Status:** Checks CS.RIN.RU, FitGirl Repacks (including scanning repack details for hypervisor cracks), and Steam DRM notices. Hypervisor-only cracks are treated as unviable/high hassle.
   - **Core Online Dependency:** Distinguishes mandatory online/live-service/matchmaking gameplay from optional co-op tags on primarily single-player games.
-  - **Crack Maintenance Hassle:** Evaluates update velocity, Early Access patch churn, Steam Workshop mod dependence, and Cloud save friction.
-- **Smart Price Tier Weighting:**
-  - **Dirt Cheap / Impulse Tier ($\le 20\%$ of threshold or $\ge 75\%$ off under threshold):** Leans **Buy** for 1-click Steam convenience when reviews are positive, unless hassle is strictly zero.
-  - **Below Threshold:** Balances Crack Hassle and Core Online Dependency against affordability.
-  - **Above Threshold:** Only recommends **Buy** when justified by core online gameplay (with healthy active servers), extreme Workshop/update dependence, or strong discounted/uncracked value.
+  - **Crack Maintenance Hassle:** Focuses strictly on real recurring friction—frequent major content updates/expansions and Steam Workshop mod reliance (ignoring standard Steam Cloud saves and Achievements).
+- **Smart Price Tier Weighting ("Static vs. Living" Tolerance):**
+  - **Static Offline & Cracked (`LOW` Online + `LOW` Hassle):** Always recommends **Crack** across every price tier—even dirt cheap sales—saving your budget for online or living games.
+  - **Dirt Cheap / Impulse Tier ($\le 20\%$ of threshold or $\ge 75\%$ off under threshold):** Eliminates `MEDIUM` or `HIGH` hassle (Workshop mods, frequent patches, optional co-op) by leaning **Buy** when reviews are positive.
+  - **Below Threshold:** Recommends **Buy** for `HIGH` hassle, uncracked games, or active `HIGH` online-core games, and weighs `MEDIUM` hassle/co-op against value.
+  - **Above Threshold:** Tolerates `MEDIUM` hassle by recommending **Crack**; for `HIGH` hassle ("living" games) or uncracked games, recommends **Buy** on a decent sale ($\ge 30\%$ off) with positive reviews, or **Wait for Sale** at full price.
 - **Token-Saving Bypasses:** Minimizes AI token usage by skipping calls for:
   - **Free-to-Play Games:** Automatically bypassed (since there's no purchasing/cracking decision).
   - **Unreleased Games & Pre-Orders:** Bypassed automatically with an **Unreleased** banner until game files and launch DRM details are out.
@@ -71,6 +72,19 @@ Below the banner, you'll see:
   - 🔴 **Restrictions & Hurdles (Rose/Red):** Denuvo Anti-tamper, 3rd-party launchers, uncracked/hypervisor-only status, and online multiplayer/matchmaking.
   - 🟢 **Freedom & Benefits (Green):** Standalone offline campaigns, DRM-free/Standard Steam, FitGirl Repack availability, active Steam discounts.
   - 🟣 **Ecosystem Features (Purple):** Steam Workshop mod support, Steam Cloud saves, controller support.
+
+### Decision Matrix Table
+
+Price acts as a tolerance bar for **Crack Hassle** and **Online Core**—not as an override for zero-hassle static offline games (`T` = your configured `MATRIX_PRICE_THRESHOLD`, default `1000`):
+
+| Game Profile | Dirt Cheap (`<= 20% T` or `>= 75%` off `< T`) | Below Threshold (`< T`) | Above Threshold (`>= T`) |
+| :--- | :--- | :--- | :--- |
+| **1. Static Offline & Cracked**<br>`Crack: CRACKED` · `Online: LOW` · `Hassle: LOW`<br>*e.g. Days Gone, Sekiro, Metro Exodus* | **🏴‍☠️ CRACK IT (1/5)**<br>Finished & offline—save your money for online or living games. | **🏴‍☠️ CRACK IT (1/5)** | **🏴‍☠️ CRACK IT (1/5)** |
+| **2. Moderate Hassle / Co-op & Cracked**<br>`Crack: CRACKED` · `Online: MED` or `Hassle: MED`<br>*e.g. Optional co-op, occasional patches, minor Workshop* | **🟢 BUY IT (4/5)** *(if Positive)*<br>Dirt-cheap price eliminates real mod/patch/co-op friction. | **🟢 BUY IT (4/5)** *(if on sale or key draw)*<br>**🏴‍☠️ CRACK IT (2/5)** *(if minor)* | **🏴‍☠️ CRACK IT (2/5)**<br>Tolerate moderate hassle to save `>= T`. |
+| **3. "Living" Game or Uncrackable**<br>`Hassle: HIGH` or `UNCRACKED` / `HYPERVISOR_ONLY`<br>*e.g. No Man's Sky, RimWorld, active Denuvo* | **🟢 BUY IT (4–5/5)** *(if Positive)*<br>**⏳ WAIT (3/5)** *(if Mixed/Negative)* | **🟢 BUY IT (4–5/5)** *(if Positive)*<br>**⏳ WAIT (3/5)** *(if Mixed/Negative)* | **🟢 BUY IT (4/5)** *(if `>= 30%` off & Positive)*<br>**⏳ WAIT (3/5)** *(full price or Mixed/Negative)* |
+| **4. Mandatory / Core Online**<br>`Online: HIGH`<br>*e.g. Helldivers 2, MMOs, live-service* | **🟢 BUY IT (5/5)** *(if `>= 100` live players)*<br>**⚠️ SKIP (1/5)** *(if `< 100` players)* | **🟢 BUY IT (5/5)** *(if `>= 100` live players)*<br>**⚠️ SKIP (1/5)** *(if `< 100` players)* | **🟢 BUY IT (4–5/5)** *(healthy & good value)*<br>**⏳ WAIT (3/5)** *(overpriced/Mixed)*<br>**⚠️ SKIP (1/5)** *(if `< 100` players)* |
+
+> **What counts as `Crack Hassle`?** Only **Steam Workshop mod dependence** and **frequent major content updates/expansions** (plus Early Access or uncracked/hypervisor status) elevate `Crack Hassle`. Standard Steam Cloud saves, Achievements, and controller support remain `LOW`.
 
 ### Token-Saving Bypasses
 

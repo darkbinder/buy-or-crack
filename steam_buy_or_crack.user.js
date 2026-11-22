@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Buy or Crack Decision Matrix
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.1
 // @description  Evaluates whether to BUY or CRACK a Steam game directly from its Store page using Gemini AI.
 // @author       Ricco
 // @match        *://store.steampowered.com/app/*
@@ -1848,7 +1848,7 @@
 
     let priceTier = `ABOVE THRESHOLD (Expensive Tier >= ${threshold} ${config.STEAM_CC})`;
     if (isDirtCheap) {
-      priceTier = `DIRT CHEAP / IMPULSE TIER (<= ${dirtCheapThreshold} ${config.STEAM_CC} or >= 75% off under threshold)`;
+      priceTier = `DEEP SALE / LOW PRICE TIER (<= ${dirtCheapThreshold} ${config.STEAM_CC} or >= 75% off — NOTE: Only triggers BUY if online_core or crack_hassle is MEDIUM/HIGH; if both are LOW, you MUST output verdict "CRACK" and explain in reasoning why cracking is preferred even on sale!)`;
     } else if (underThreshold) {
       priceTier = `BELOW THRESHOLD (Affordable / Mid Tier < ${threshold} ${config.STEAM_CC})`;
     }
@@ -1896,20 +1896,27 @@ EVALUATION PILLARS:
    - "LOW": Primarily offline / single-player game (even if Steam lists optional co-op, leaderboards, or Steam Cloud tags).
 
 3. \`crack_hassle\`: "LOW" | "MEDIUM" | "HIGH"
-   - Measures maintenance friction of a cracked copy: frequent patches/updates (Early Access or recent launch), heavy reliance on Steam Workshop mods, or important Cloud/cross-save sync. "UNCRACKED", "HYPERVISOR_ONLY", and "ONLINE_ONLY" automatically have "HIGH" crack_hassle.
+   - "LOW": Finished / static game (or only receives minor bugfixes) and does not depend on Steam Workshop mods. IMPORTANT: Standard Steam Cloud saves, Steam Achievements, controller support, and leaderboards do NOT count as crack hassle—keep \`crack_hassle\` as "LOW".
+   - "MEDIUM": Moderate or optional Steam Workshop mod usage, or occasional content patches/DLC drops where updating a cracked copy takes some effort.
+   - "HIGH": "Living" game with frequent major content updates/expansions (e.g. No Man's Sky or active Early Access roadmaps), heavy reliance on Steam Workshop for core longevity (e.g. RimWorld, Cities: Skylines, Teardown), OR "UNCRACKED" / "HYPERVISOR_ONLY" / "ONLINE_ONLY".
 
 VERDICT & PRICE WEIGHTING RULES (\`verdict\` & \`decision_score\` 1-5):
-- "SKIP" (Score 1): Use when \`online_core\` is "HIGH" (no point cracking) AND Active Steam Players is critically low (< 100 players online) or Steam Reviews are overwhelmingly negative.
-- "WAIT" (Score 3): Use when the game cannot be cleanly cracked ("UNCRACKED" or "HYPERVISOR_ONLY", or extreme "HIGH" crack_hassle) AND it is currently in the ABOVE THRESHOLD tier without a deep discount (>= 40% off) OR has Mixed/Negative reviews. Do NOT tell the user to pay full high price just because a crack isn't ready.
-- "BUY" (Score 4-5):
-  * DIRT CHEAP TIER: Strongly lean "BUY" (Score 4) for instant Steam convenience, Cloud saves, and zero torrent/repack friction if reviews are Positive—only choose "CRACK" if \`crack_hassle\` is strictly zero on a tiny static offline game or reviews are poor.
-  * BELOW THRESHOLD TIER: Recommend "BUY" when \`online_core\` is "MEDIUM"/"HIGH" (with healthy player count), \`crack_hassle\` is "MEDIUM"/"HIGH", or \`crack_status\` is "UNCRACKED"/"HYPERVISOR_ONLY" with Positive reviews.
-  * ABOVE THRESHOLD TIER: Recommend "BUY" only when the high price is justified—e.g. "HIGH" \`online_core\` with healthy player count (>= 100), heavy Workshop/update dependence, or "UNCRACKED"/"HYPERVISOR_ONLY" on a strong sale with Very/Overwhelmingly Positive reviews.
-- "CRACK" (Score 1-2): Use when a clean non-hypervisor crack exists (\`crack_status\` is "CRACKED"), \`online_core\` is "LOW" (or "MEDIUM" above threshold where solo campaign is the main draw), and paying the asking price isn't justified over a low/moderate-hassle cracked copy.
+- RULE 1 — Static Offline & Cracked (\`crack_status\` is "CRACKED" + \`online_core\` is "LOW" + \`crack_hassle\` is "LOW"):
+  * ALWAYS recommend "CRACK" (Score 1) across ALL price tiers—even in the DEEP SALE / LOW PRICE TIER or at -90% off. Never tell the user to buy a finished offline game with no Workshop or update friction just because it is cheap.
+- RULE 2 — Moderate Hassle or Optional Co-op (\`crack_status\` is "CRACKED" + (\`crack_hassle\` is "MEDIUM" or \`online_core\` is "MEDIUM")):
+  * DEEP SALE / LOW PRICE TIER: Recommend "BUY" (Score 4) if reviews are Positive (a tiny sale price eliminates real mod, patch, or co-op friction).
+  * BELOW THRESHOLD TIER: Recommend "BUY" (Score 4) if on sale or if Workshop/co-op is a major draw; otherwise "CRACK" (Score 2).
+  * ABOVE THRESHOLD TIER: Recommend "CRACK" (Score 2) — tolerate moderate hassle to save >= threshold.
+- RULE 3 — "Living" High-Hassle Game (\`crack_hassle\` is "HIGH") or Uncrackable ("UNCRACKED" / "HYPERVISOR_ONLY"):
+  * DEEP SALE or BELOW THRESHOLD TIER: Recommend "BUY" (Score 4-5) if reviews are Positive (or "WAIT" Score 3 if reviews are Mixed/Negative).
+  * ABOVE THRESHOLD TIER: If currently on a decent sale (discount >= 30% off) with Positive reviews, recommend "BUY" (Score 4); if at full price (discount < 30% off) or Mixed/Negative reviews, recommend "WAIT" (Score 3 — worth buying, not cracking, once it goes on sale).
+- RULE 4 — Mandatory / Core Online (\`online_core\` is "HIGH"):
+  * If Active Steam Players is critically low (< 100 players online) or Steam Reviews are overwhelmingly negative -> "SKIP" (Score 1).
+  * Otherwise -> "BUY" (Score 4-5) if below threshold or on sale with Positive reviews, or "WAIT" (Score 3) if overpriced with Mixed reviews.
 
 CRITICAL OUTPUT RULES:
-- \`reasoning\`: Exactly 1 or 2 concise sentences explaining the verdict, referencing the real crack/DRM state, online core vs player count (if relevant), hassle, and price tier.
-- \`online_components\`: 3 to 5 short tags describing gameplay connectivity and dependencies (e.g. "Offline single-player campaign", "Optional P2P co-op", "Steam Workshop mod support", "Live-service matchmaking", "Frequent updates"). Never contradict the scraped DRM notice.
+- \`reasoning\`: Exactly 1 or 2 concise sentences that strictly match and justify your final \`verdict\`. If \`verdict\` is "CRACK", NEVER call the game an "easy purchase", "worth buying", or recommend buying it—explain why cracking is preferred even if discounted.
+- \`online_components\`: 3 to 5 short tags describing ONLY gameplay connectivity, DRM/crack state, update frequency, save sync, or mod/Workshop support (e.g. "Offline single-player campaign", "Optional P2P co-op", "Steam Workshop mod support", "Live-service matchmaking", "Frequent updates"). NEVER include generic game genre mechanics (such as "Turn-based battles", "Monster collection", or "Open world") and never contradict the scraped DRM notice.
 
 Respond ONLY with a valid JSON object matching this exact schema:
 {
@@ -2032,14 +2039,22 @@ Respond ONLY with a valid JSON object matching this exact schema:
         : 'LOW';
       parsedResponse.reasoning = String(parsedResponse.reasoning || '').trim();
 
+      const isPositiveReviews = !/mixed|negative/i.test(gameData.reviewSummary || '');
+      const hasDecentSale = (gameData.discountPct || 0) >= 30;
+      const buyOrWaitUnderThreshold = isPositiveReviews ? 'BUY' : 'WAIT';
+      const scoreUnderThreshold = buyOrWaitUnderThreshold === 'BUY' ? 4 : 3;
+      const buyOrWaitAboveThreshold = (hasDecentSale && isPositiveReviews) ? 'BUY' : 'WAIT';
+      const scoreAboveThreshold = buyOrWaitAboveThreshold === 'BUY' ? 4 : 3;
+      const hasWorkshopCategory = (gameData.categories || []).some(c => /steam workshop/i.test(c));
+
       // 1. Hypervisor Guard: user refuses hypervisor cracks -> treat as unviable/high hassle
       const hypervisorDetected = Boolean(gameData.isHypervisor) || parsedResponse.crack_status === 'HYPERVISOR_ONLY';
       if (hypervisorDetected) {
         parsedResponse.crack_status = 'HYPERVISOR_ONLY';
         parsedResponse.crack_hassle = 'HIGH';
         if (parsedResponse.verdict === 'CRACK') {
-          parsedResponse.verdict = underThreshold ? 'BUY' : 'WAIT';
-          parsedResponse.decision_score = underThreshold ? 4 : 3;
+          parsedResponse.verdict = underThreshold ? buyOrWaitUnderThreshold : buyOrWaitAboveThreshold;
+          parsedResponse.decision_score = underThreshold ? scoreUnderThreshold : scoreAboveThreshold;
           if (!/hypervisor/i.test(parsedResponse.reasoning)) {
             parsedResponse.reasoning += ' Only a hypervisor crack is available, which is treated as unviable.';
           }
@@ -2064,10 +2079,11 @@ Respond ONLY with a valid JSON object matching this exact schema:
             console.log("Matrix guard triggered: overriding unverified CRACK / hallucinatory DRM response.");
             parsedResponse.crack_status = hypervisorDetected ? 'HYPERVISOR_ONLY' : 'UNCRACKED';
             parsedResponse.crack_hassle = 'HIGH';
-            parsedResponse.verdict = underThreshold ? 'BUY' : 'WAIT';
-            parsedResponse.decision_score = underThreshold ? 4 : 3;
+            parsedResponse.verdict = underThreshold ? buyOrWaitUnderThreshold : buyOrWaitAboveThreshold;
+            parsedResponse.decision_score = underThreshold ? scoreUnderThreshold : scoreAboveThreshold;
             if (contradicts) {
-              parsedResponse.reasoning = `This game incorporates ${drmStr.split(';')[0]}, which prevents standard cracking. ${underThreshold ? 'Buying at this price is recommended.' : 'Waiting for a sale is recommended.'}`;
+              const recText = parsedResponse.verdict === 'BUY' ? 'Buying at this price is recommended.' : 'Waiting for a sale is recommended.';
+              parsedResponse.reasoning = `This game incorporates ${drmStr.split(';')[0]}, which prevents standard cracking. ${recText}`;
             }
           }
         } else if (contradicts) {
@@ -2103,9 +2119,12 @@ Respond ONLY with a valid JSON object matching this exact schema:
           const descLower = (gameData.description || '').toLowerCase();
           const isSinglePlayer = catLower.includes('single-player') || catLower.includes('single player') || descLower.includes('single-player');
 
-          if (isSinglePlayer && !hypervisorDetected && parsedResponse.online_core !== 'HIGH' && !isDirtCheap && parsedResponse.decision_score >= 3) {
+          if (isSinglePlayer && !hypervisorDetected && parsedResponse.online_core !== 'HIGH' && parsedResponse.decision_score >= 3) {
             parsedResponse.verdict = 'CRACK';
             parsedResponse.crack_status = 'CRACKED';
+            if (!hasWorkshopCategory && !gameData.isEarlyAccess && parsedResponse.crack_hassle === 'HIGH') {
+              parsedResponse.crack_hassle = 'LOW';
+            }
             parsedResponse.decision_score = 1;
             parsedResponse.reasoning += " (Note: No Denuvo or 3rd-party DRM detected on Steam; single-player content is playable offline).";
           }
@@ -2124,7 +2143,7 @@ Respond ONLY with a valid JSON object matching this exact schema:
         const wasMarkedUncracked = parsedResponse.crack_status === 'UNCRACKED';
         parsedResponse.crack_status = 'CRACKED';
 
-        if (wasMarkedUncracked && parsedResponse.crack_hassle === 'HIGH' && !gameData.isEarlyAccess) {
+        if (wasMarkedUncracked && parsedResponse.crack_hassle === 'HIGH' && !gameData.isEarlyAccess && !hasWorkshopCategory) {
           parsedResponse.crack_hassle = 'LOW';
         }
 
@@ -2164,6 +2183,43 @@ Respond ONLY with a valid JSON object matching this exact schema:
         parsedResponse.decision_score = 1;
         if (!/player|dead|empty|low/i.test(parsedResponse.reasoning)) {
           parsedResponse.reasoning += ` (Only ${gameData.playerCount} active Steam players online, making online play unviable.)`;
+        }
+      }
+
+      // 4b. Static Offline Always-Crack Guard & High-Hassle Above-Threshold Sale Guard
+      const proBuyReasoningRe = /\b(?:easy purchase|worth buying|recommend buying|recommended to buy|just buy|buy it|worth the purchase|worth picking up|impulse buy|great deal to buy|worth owning)\b/i;
+
+      if (
+        parsedResponse.crack_status === 'CRACKED' &&
+        parsedResponse.online_core === 'LOW' &&
+        parsedResponse.crack_hassle === 'LOW'
+      ) {
+        if (parsedResponse.verdict !== 'CRACK' || proBuyReasoningRe.test(parsedResponse.reasoning)) {
+          console.log("Matrix guard triggered: Static offline & low-hassle cracked game -> enforcing CRACK verdict and reasoning.");
+          parsedResponse.verdict = 'CRACK';
+          parsedResponse.decision_score = 1;
+          const priceNote = gameData.discountPct > 0
+            ? `at -${gameData.discountPct}% off (${gameData.priceString})`
+            : `at ${gameData.priceString}`;
+          parsedResponse.reasoning = `Even ${priceNote}, this is a finished offline single-player game with no Steam Workshop or update friction—cracking it is hassle-free and saves your budget for online or living games.`;
+        }
+      } else if (
+        !underThreshold &&
+        parsedResponse.online_core !== 'HIGH' &&
+        (parsedResponse.crack_status === 'UNCRACKED' || parsedResponse.crack_status === 'HYPERVISOR_ONLY' || parsedResponse.crack_hassle === 'HIGH')
+      ) {
+        if ((!hasDecentSale || !isPositiveReviews) && parsedResponse.verdict === 'BUY') {
+          console.log("Matrix guard triggered: Above-threshold high-hassle/uncracked without >=30% sale or positive reviews -> overriding to WAIT.");
+          parsedResponse.verdict = 'WAIT';
+          parsedResponse.decision_score = 3;
+          parsedResponse.reasoning = !hasDecentSale
+            ? `At ${gameData.priceString} without a major sale (>= 30% off), waiting for a deeper discount before buying is recommended.`
+            : `With ${gameData.reviewSummary || 'mixed'} reviews at ${gameData.priceString}, waiting for a deeper sale or patches before buying is recommended.`;
+        } else if (hasDecentSale && isPositiveReviews && parsedResponse.verdict === 'CRACK') {
+          console.log("Matrix guard triggered: Above-threshold high-hassle/uncracked on >=30% sale with positive reviews -> overriding to BUY.");
+          parsedResponse.verdict = 'BUY';
+          parsedResponse.decision_score = 4;
+          parsedResponse.reasoning = `Currently -${gameData.discountPct}% off (${gameData.priceString}) with ${gameData.reviewSummary || 'positive'} reviews—given the high crack hassle or uncracked protection, buying it on sale is worth it.`;
         }
       }
 
