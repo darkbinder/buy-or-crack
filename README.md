@@ -8,17 +8,22 @@ This repository contains a **Userscript** implementation of the tool: a zero-fri
 
 ## Features
 
-- **Price Routing Matrix:** Routes evaluation based on price vs. user-defined threshold:
-  - **Cheap Games (< Threshold):** Evaluated using the **Hassle of Cracking** prompt (checks update frequency, workshop requirements, and save states).
-  - **Expensive Games (>= Threshold):** Evaluated using the **Online Dependency** prompt (checks online validations, matchmaking, and launcher requirements).
+- **Unified Multi-Factor Decision Matrix:** Evaluates every game across three core pillars alongside price tier, active discounts, Steam reviews, and live multiplayer health:
+  - **Crack Status:** Checks CS.RIN.RU, FitGirl Repacks (including scanning repack details for hypervisor cracks), and Steam DRM notices. Hypervisor-only cracks are treated as unviable/high hassle.
+  - **Core Online Dependency:** Distinguishes mandatory online/live-service/matchmaking gameplay from optional co-op tags on primarily single-player games.
+  - **Crack Maintenance Hassle:** Evaluates update velocity, Early Access patch churn, Steam Workshop mod dependence, and Cloud save friction.
+- **Smart Price Tier Weighting:**
+  - **Dirt Cheap / Impulse Tier ($\le 20\%$ of threshold or $\ge 75\%$ off under threshold):** Leans **Buy** for 1-click Steam convenience when reviews are positive, unless hassle is strictly zero.
+  - **Below Threshold:** Balances Crack Hassle and Core Online Dependency against affordability.
+  - **Above Threshold:** Only recommends **Buy** when justified by core online gameplay (with healthy active servers), extreme Workshop/update dependence, or strong discounted/uncracked value.
 - **Token-Saving Bypasses:** Minimizes AI token usage by skipping calls for:
   - **Free-to-Play Games:** Automatically bypassed (since there's no purchasing/cracking decision).
   - **Unreleased Games & Pre-Orders:** Bypassed automatically with an **Unreleased** banner until game files and launch DRM details are out.
   - **Early Access Games:** Bypassed by default (since they are unfinished). Includes a settings toggle to enable evaluations.
 - **DRM & Crack-Aware AI Matrix:**
-  - Scrapes 3rd-party DRM notices (e.g., Denuvo Anti-tamper) directly from the Steam store specs.
-  - Sourced from Altansar69's CS.RIN.RU Enhanced tags (or queries the CS.RIN.RU forum as a fallback) to detect crack availability (`[CRACKED]`, `[UNCRACKED]`, `[SteamStub]`).
-  - Feeds crack status and DRM facts directly into the Gemini prompt so hassle and online dependency scores account for whether cracking is impossible/difficult or hassle-free.
+  - Scrapes 3rd-party DRM notices (e.g., Denuvo Anti-tamper), discounts, and overall review summaries directly from the Steam store page.
+  - Queries Altansar69's CS.RIN.RU Enhanced DOM tags, the CS.RIN.RU forum, and FitGirl Repacks WordPress API (`fitgirl-repacks.site`) to detect crack availability and flag hypervisor-only cracks.
+  - Combines deterministic anti-hallucination and policy guards with Gemini structured JSON output so verdicts stay accurate.
 - **Inline Custom Widget:** Injects a premium, glassmorphic UI card directly above the Steam buy button block.
 - **Isolated Styling:** Uses Shadow DOM to prevent Steam's CSS from breaking the widget's premium look.
 - **Dynamic Configuration:** Supports region country codes (CC), price thresholds, and custom evaluation switches directly inline.
@@ -53,15 +58,18 @@ Install [Violentmonkey](https://violentmonkey.github.io/) or [Tampermonkey](http
 
 ## How it Works (Matrix Decision Scores)
 
-Once configured, loading any Steam page initiates an analysis. The widget displays:
-- **🟢 BUY IT:** If the AI score is $\ge 3$.
-- **🏴‍☠️ CRACK IT:** If the AI score is $< 3$.
-- **Live Player Count:** Queries active online player numbers so you know if multiplayer is dead.
-- **Visual Gauge Score:** Integrates a score scale from $1$ (Low) to $5$ (High).
-- **Reasoning:** A concise explanation of the AI's logic (e.g., highlighting DRM status, crack availability, updates, Steam Workshop usage, etc.).
+Once configured, loading any Steam page initiates an analysis. The widget displays one of four verdict banners:
+- **🟢 BUY IT (Score 4–5):** Worth buying right now (cheap/discounted convenience, high crack hassle, uncracked at a fair price, or active online-core gameplay).
+- **🏴‍☠️ CRACK IT (Score 1–2):** Clean non-hypervisor crack exists, core loop is offline-viable, and the price outweighs maintenance friction.
+- **⏳ WAIT FOR SALE (Score 3):** Uncracked or hypervisor-only (or high-hassle), but currently expensive or mixed-reviewed—wait for a deeper discount.
+- **⚠️ SKIP / DEAD ONLINE (Score 1):** Core gameplay relies heavily on online servers/matchmaking, and live Steam player counts are critically low ($< 100$).
+
+Below the banner, you'll see:
+- **Buy Worthiness Gauge (1–5) & 3-Pillar Sub-Pills:** Shows `Crack Status` (Cracked / Hypervisor Only / Uncracked / Online-Only), `Online Core` (Low / Med / High), and `Crack Hassle` (Low / Med / High).
+- **Reasoning:** A concise 1–2 sentence explanation covering crack/DRM state, online core vs. server health, hassle, and price tier.
 - **Three-Tier Online Components & Protection Badges:**
-  - 🔴 **Restrictions & Hurdles (Rose/Red):** Denuvo Anti-tamper, 3rd-party launchers, uncracked/hypervisor status, and online multiplayer/matchmaking (where cracking prevents access to the core loop).
-  - 🟢 **Freedom & Benefits (Green):** Standalone offline campaigns, DRM-free/Standard Steam, confirmed cracked status.
+  - 🔴 **Restrictions & Hurdles (Rose/Red):** Denuvo Anti-tamper, 3rd-party launchers, uncracked/hypervisor-only status, and online multiplayer/matchmaking.
+  - 🟢 **Freedom & Benefits (Green):** Standalone offline campaigns, DRM-free/Standard Steam, FitGirl Repack availability, active Steam discounts.
   - 🟣 **Ecosystem Features (Purple):** Steam Workshop mod support, Steam Cloud saves, controller support.
 
 ### Token-Saving Bypasses

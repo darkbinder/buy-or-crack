@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Buy or Crack Decision Matrix
 // @namespace    http://tampermonkey.net/
-// @version      1.3.2
+// @version      1.4.0
 // @description  Evaluates whether to BUY or CRACK a Steam game directly from its Store page using Gemini AI.
 // @author       Ricco
 // @match        *://store.steampowered.com/app/*
@@ -11,6 +11,7 @@
 // @connect      generativelanguage.googleapis.com
 // @connect      api.steampowered.com
 // @connect      cs.rin.ru
+// @connect      fitgirl-repacks.site
 // @run-at       document-end
 // @updateURL    https://raw.githubusercontent.com/darkbinder/buy-or-crack/main/steam_buy_or_crack.user.js
 // @downloadURL  https://raw.githubusercontent.com/darkbinder/buy-or-crack/main/steam_buy_or_crack.user.js
@@ -131,6 +132,14 @@
       background: linear-gradient(90deg, #f43f5e, #fb7185, #e11d48);
     }
 
+    .widget-card.wait::before {
+      background: linear-gradient(90deg, #f59e0b, #fbbf24, #d97706);
+    }
+
+    .widget-card.skip::before {
+      background: linear-gradient(90deg, #64748b, #f97316, #ea580c);
+    }
+
     /* Views */
     .view-main {
       display: block;
@@ -222,6 +231,22 @@
       box-shadow: inset 0 0 12px rgba(244, 63, 94, 0.05);
     }
 
+    .wait-banner {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      color: #fbbf24;
+      text-shadow: 0 0 10px rgba(251, 191, 36, 0.2);
+      box-shadow: inset 0 0 12px rgba(245, 158, 11, 0.05);
+    }
+
+    .skip-banner {
+      background: rgba(249, 115, 22, 0.08);
+      border: 1px solid rgba(249, 115, 22, 0.25);
+      color: #fb923c;
+      text-shadow: 0 0 10px rgba(251, 146, 60, 0.2);
+      box-shadow: inset 0 0 12px rgba(249, 115, 22, 0.05);
+    }
+
     .recommendation-banner svg {
       width: 22px;
       height: 22px;
@@ -305,6 +330,16 @@
       box-shadow: 0 0 10px rgba(251, 113, 133, 0.3);
     }
 
+    .wait .score-fill {
+      background: linear-gradient(90deg, #d97706, #fbbf24);
+      box-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
+    }
+
+    .skip .score-fill {
+      background: linear-gradient(90deg, #64748b, #fb923c);
+      box-shadow: 0 0 10px rgba(251, 146, 60, 0.25);
+    }
+
     .score-labels {
       display: flex;
       justify-content: space-between;
@@ -317,6 +352,52 @@
     .score-labels span.active {
       color: #94a3b8;
       font-weight: 700;
+    }
+
+    .matrix-pillars {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .pillar-pill {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pillar-pill.pill-good {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.25);
+      color: #34d399;
+    }
+
+    .pillar-pill.pill-warn {
+      background: rgba(245, 158, 11, 0.08);
+      border-color: rgba(245, 158, 11, 0.25);
+      color: #fbbf24;
+    }
+
+    .pillar-pill.pill-bad {
+      background: rgba(244, 63, 94, 0.08);
+      border-color: rgba(244, 63, 94, 0.25);
+      color: #fb7185;
+    }
+
+    .pillar-pill.pill-info {
+      background: rgba(139, 92, 246, 0.1);
+      border-color: rgba(139, 92, 246, 0.25);
+      color: #c084fc;
     }
 
     .price-badge {
@@ -349,6 +430,14 @@
 
     .crack .reasoning-block {
       border-left-color: #f43f5e;
+    }
+
+    .wait .reasoning-block {
+      border-left-color: #f59e0b;
+    }
+
+    .skip .reasoning-block {
+      border-left-color: #f97316;
     }
 
     /* Components list block */
@@ -868,18 +957,26 @@
         return;
       }
 
-      // Fetch player count and crack/DRM status
-      const [playerCount, rinFromDom] = await Promise.all([
+      // Fetch player count, DOM RIN status, and FitGirl Repacks status in parallel
+      const [playerCount, rinFromDom, fitGirlStatus] = await Promise.all([
         getPlayerCount(gameData.appId),
-        Promise.resolve(getRinStatusFromDOM())
+        Promise.resolve(getRinStatusFromDOM()),
+        fetchFitGirlStatus(gameData.name)
       ]);
       gameData.playerCount = playerCount;
+      gameData.fitGirlStatus = fitGirlStatus;
 
-      let crackStatus = rinFromDom;
-      if (!crackStatus) {
-        crackStatus = await fetchRinStatusFromAPI(gameData.appId, gameData.name);
+      let rinStatus = rinFromDom;
+      if (!rinStatus) {
+        rinStatus = await fetchRinStatusFromAPI(gameData.appId, gameData.name);
       }
-      gameData.crackStatus = crackStatus || 'Unknown / Not detected';
+      gameData.rinStatus = rinStatus || 'Unknown / Not detected';
+
+      const crackParts = [];
+      if (rinStatus) crackParts.push(`CS.RIN.RU: ${rinStatus}`);
+      if (fitGirlStatus && fitGirlStatus.label) crackParts.push(`FitGirl: ${fitGirlStatus.label}`);
+      gameData.crackStatus = crackParts.length > 0 ? crackParts.join(' | ') : 'Unknown / Not detected';
+      gameData.isHypervisor = /hypervisor/i.test(rinStatus || '') || Boolean(fitGirlStatus && fitGirlStatus.isHypervisor);
       gameData.drmNotice = scrapeDrmNotice();
       
       const debugEl = shadow.querySelector('#debug-drm-output');
@@ -1030,6 +1127,16 @@
     }
   }
 
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function buildComponentBadges(gameData, result) {
     const badges = [];
     const seen = new Set();
@@ -1071,13 +1178,25 @@
       addBadge('Standard Steam (No 3rd-Party DRM)', 'benefit', ICONS.check);
     }
 
-    // 2. DETERMINISTIC CRACK STATUS BADGE (CS.RIN.RU / Altansar)
-    const crackRaw = gData.crackStatus || '';
-    const crackLower = crackRaw.toLowerCase();
-    if (crackLower.includes('uncracked') || crackLower.includes('hypervisor')) {
-      addBadge(`Status: ${crackRaw}`, 'restriction', ICONS.lock);
-    } else if (crackLower.includes('cracked') || crackLower.includes('steamstub')) {
-      addBadge(`Status: ${crackRaw}`, 'benefit', ICONS.shield);
+    // 2. DETERMINISTIC CRACK STATUS & SALE BADGES (CS.RIN.RU / FitGirl / Hypervisor)
+    const rinRaw = gData.rinStatus || '';
+    const rinLower = rinRaw.toLowerCase();
+    const isHypervisor = Boolean(gData.isHypervisor) || result.crackStatus === 'HYPERVISOR_ONLY';
+
+    if (isHypervisor) {
+      addBadge('Hypervisor Crack Only (Avoid)', 'restriction', ICONS.lock);
+    } else if (gData.fitGirlStatus && gData.fitGirlStatus.found) {
+      addBadge('FitGirl Repack Available', 'benefit', ICONS.shield);
+    }
+
+    if (rinLower.includes('uncracked')) {
+      addBadge(`Status: ${rinRaw}`, 'restriction', ICONS.lock);
+    } else if (!isHypervisor && (rinLower.includes('cracked') || rinLower.includes('steamstub'))) {
+      addBadge(`Status: ${rinRaw}`, 'benefit', ICONS.shield);
+    }
+
+    if (gData.discountPct > 0) {
+      addBadge(`On Sale: -${gData.discountPct}% Off`, 'benefit', ICONS.check);
     }
 
     // 3. CURATED AI TAGS
@@ -1097,15 +1216,18 @@
       if (hasDrm && (lower.includes('no drm') || lower.includes('no intrusive drm') || lower.includes('drm-free') || lower.includes('without any crack hassle'))) {
         return; // drop contradiction!
       }
-      // Guard: Avoid duplicate Denuvo badge if already added
+      // Guard: Avoid duplicate Denuvo or Hypervisor badges if already added
       if (lower.includes('denuvo') && seen.has('denuvo anti-tamper')) {
+        return;
+      }
+      if (isHypervisor && (lower.includes('hypervisor') || lower.includes('fitgirl') || lower.includes('hassle-free'))) {
         return;
       }
 
       // Classification:
       // A. Restrictions: Online multiplayer, matchmaking, server dependency, live services, anticheat, launchers
       const isOnline = lower.includes('online') || lower.includes('server') || lower.includes('multiplayer') || lower.includes('matchmaking') || lower.includes('live-service') || lower.includes('live service');
-      const isDrmOrAntiCheat = lower.includes('denuvo') || lower.includes('anticheat') || lower.includes('anti-cheat') || lower.includes('battleye') || lower.includes('easy anti') || (lower.includes('drm') && !lower.includes('no ') && !lower.includes('free'));
+      const isDrmOrAntiCheat = lower.includes('denuvo') || lower.includes('hypervisor') || lower.includes('anticheat') || lower.includes('anti-cheat') || lower.includes('battleye') || lower.includes('easy anti') || (lower.includes('drm') && !lower.includes('no ') && !lower.includes('free'));
       const isAccountOrLauncher = lower.includes('launcher') || lower.includes('account required') || lower.includes('always-online');
 
       if (isOnline || isDrmOrAntiCheat || isAccountOrLauncher) {
@@ -1136,18 +1258,43 @@
   }
 
   function renderDecision(result, gameData) {
-    const gameName = typeof gameData === 'object' ? gameData.name : gameData;
-    const isBuy = result.decisionScore >= 3;
-    widgetInner.className = `widget-card ${isBuy ? 'buy' : 'crack'}`;
+    const gData = typeof gameData === 'object' ? gameData : {};
+    const gameName = gData.name || (typeof gameData === 'string' ? gameData : 'Game');
+    const verdict = ['BUY', 'CRACK', 'WAIT', 'SKIP'].includes((result.verdict || '').toUpperCase())
+      ? result.verdict.toUpperCase()
+      : (result.decisionScore >= 3 ? 'BUY' : 'CRACK');
+
+    widgetInner.className = `widget-card ${verdict.toLowerCase()}`;
 
     let recHtml = '';
-    if (isBuy) {
+    if (verdict === 'BUY') {
       recHtml = `
         <div class="recommendation-banner buy-banner">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
-          <span>🟢 BUY IT: ${gameName}</span>
+          <span>🟢 BUY IT: ${escapeHtml(gameName)}</span>
+        </div>
+      `;
+    } else if (verdict === 'WAIT') {
+      recHtml = `
+        <div class="recommendation-banner wait-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>⏳ WAIT FOR SALE: ${escapeHtml(gameName)}</span>
+        </div>
+      `;
+    } else if (verdict === 'SKIP') {
+      recHtml = `
+        <div class="recommendation-banner skip-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <span>⚠️ SKIP / DEAD ONLINE: ${escapeHtml(gameName)}</span>
         </div>
       `;
     } else {
@@ -1158,28 +1305,50 @@
             <circle cx="12" cy="11" r="3"></circle>
             <line x1="12" y1="14" x2="12" y2="14.01"></line>
           </svg>
-          <span>🏴‍☠️ CRACK IT: ${gameName}</span>
+          <span>🏴‍☠️ CRACK IT: ${escapeHtml(gameName)}</span>
         </div>
       `;
     }
 
     const fillPercent = (result.decisionScore / 5) * 100;
 
+    // 3-Pillar Sub-Pills
+    const crackStatus = (result.crackStatus || 'CRACKED').toUpperCase();
+    let crackPillClass = 'pill-good';
+    let crackPillText = '🔓 Cracked';
+    if (crackStatus === 'HYPERVISOR_ONLY') {
+      crackPillClass = 'pill-bad';
+      crackPillText = '🔒 Hypervisor Only';
+    } else if (crackStatus === 'UNCRACKED') {
+      crackPillClass = 'pill-bad';
+      crackPillText = '🔒 Uncracked';
+    } else if (crackStatus === 'ONLINE_ONLY') {
+      crackPillClass = 'pill-info';
+      crackPillText = '🌐 Online-Only';
+    }
+
+    const onlineCore = (result.onlineCore || 'LOW').toUpperCase();
+    const onlinePillClass = onlineCore === 'HIGH' ? 'pill-bad' : (onlineCore === 'MEDIUM' ? 'pill-warn' : 'pill-good');
+    const onlineLabel = onlineCore === 'MEDIUM' ? 'Med' : (onlineCore === 'HIGH' ? 'High' : 'Low');
+
+    const crackHassle = (result.crackHassle || 'LOW').toUpperCase();
+    const hasslePillClass = crackHassle === 'HIGH' ? 'pill-bad' : (crackHassle === 'MEDIUM' ? 'pill-warn' : 'pill-good');
+    const hassleLabel = crackHassle === 'MEDIUM' ? 'Med' : (crackHassle === 'HIGH' ? 'High' : 'Low');
+
     const badges = buildComponentBadges(gameData, result);
     const componentsHtml = badges.map(badge => `
       <div class="component-badge badge-${badge.type}">
         ${badge.iconSvg}
-        <span>${badge.text}</span>
+        <span>${escapeHtml(badge.text)}</span>
       </div>
     `).join('');
-
-    const evaluationLabel = result.evaluationType === 'HASSLE' ? 'Hassle of Cracking' : 'Online Dependency';
 
     evalView.innerHTML = `
       <div class="widget-header">
         <div class="title-area">
-          <span class="matrix-badge">${result.evaluationType} MATRIX</span>
+          <span class="matrix-badge">UNIFIED MATRIX</span>
           <span class="matrix-title">Steam Decision Core</span>
+          ${gData.discountPct > 0 ? `<span class="price-badge" style="color:#34d399; background:rgba(16,185,129,0.1);">-${gData.discountPct}% OFF</span>` : ''}
         </div>
         <div class="settings-link" title="Open Matrix Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1194,23 +1363,28 @@
       <div class="info-grid">
         <div class="score-block">
           <div class="score-header">
-            <span class="score-label">${evaluationLabel}</span>
+            <span class="score-label">Buy Worthiness</span>
             <span class="score-val">${result.decisionScore} <span>/ 5</span></span>
           </div>
           <div class="score-track">
             <div class="score-fill" style="width: ${fillPercent}%;"></div>
           </div>
           <div class="score-labels">
-            <span class="${result.decisionScore === 1 ? 'active' : ''}">1 (Low)</span>
+            <span class="${result.decisionScore === 1 ? 'active' : ''}">1 (Crack/Skip)</span>
             <span class="${result.decisionScore === 2 ? 'active' : ''}">2</span>
-            <span class="${result.decisionScore === 3 ? 'active' : ''}">3 (Buy)</span>
+            <span class="${result.decisionScore === 3 ? 'active' : ''}">3 (Wait)</span>
             <span class="${result.decisionScore === 4 ? 'active' : ''}">4</span>
-            <span class="${result.decisionScore === 5 ? 'active' : ''}">5 (High)</span>
+            <span class="${result.decisionScore === 5 ? 'active' : ''}">5 (Must Buy)</span>
+          </div>
+          <div class="matrix-pillars">
+            <span class="pillar-pill ${crackPillClass}">${crackPillText}</span>
+            <span class="pillar-pill ${onlinePillClass}">Online Core: ${onlineLabel}</span>
+            <span class="pillar-pill ${hasslePillClass}">Crack Hassle: ${hassleLabel}</span>
           </div>
         </div>
         <div>
           <div class="reasoning-block">
-            <span>"${result.reasoning}"</span>
+            <span>"${escapeHtml(result.reasoning)}"</span>
           </div>
         </div>
       </div>
@@ -1232,9 +1406,12 @@
   // --- SCRAPING ENGINE ---
 
   function scrapeGameDetails() {
-    const name = document.querySelector('.apphub_AppName')?.textContent.trim() || 
-                 document.querySelector('#appHubAppName')?.textContent.trim() || 
-                 document.title.replace(' on Steam', '');
+    const rawName = document.querySelector('.apphub_AppName')?.textContent.trim() || 
+                    document.querySelector('#appHubAppName')?.textContent.trim() || 
+                    document.title.replace(' on Steam', '');
+    const name = rawName
+      .replace(/\s*\[(?:CRACKED|UNCRACKED|SteamStub|Not on RIN|bypass|denuvo|hypervisor)[^\]]*\]/gi, '')
+      .trim();
 
     const match = window.location.pathname.match(/\/app\/(\d+)/);
     const appId = match ? match[1] : '';
@@ -1252,6 +1429,28 @@
     } else if (priceString) {
       priceNumeric = parsePriceString(priceString);
     }
+
+    // Scrape discount % and original price from main base-game purchase block (avoiding bundles/demos when possible)
+    const purchaseBlocks = Array.from(document.querySelectorAll('#game_area_purchase .game_area_purchase_game:not(.bundle):not(.demo_above_purchase)'));
+    const pricedBlock = purchaseBlocks.find(el => el.querySelector('.game_purchase_price, .discount_final_price')) ||
+                        document.querySelector('.game_area_purchase_game');
+
+    const discountPctEl = pricedBlock
+      ? pricedBlock.querySelector('.discount_pct')
+      : document.querySelector('.game_area_purchase_game .discount_pct, .discount_pct');
+    const discountPctRaw = discountPctEl ? discountPctEl.textContent.trim() : '';
+    const discountMatch = discountPctRaw.match(/\d+/);
+    const discountPct = discountMatch ? parseInt(discountMatch[0], 10) : 0;
+
+    const originalPriceEl = pricedBlock
+      ? pricedBlock.querySelector('.discount_original_price')
+      : document.querySelector('.game_area_purchase_game .discount_original_price, .discount_original_price');
+    const originalPriceString = originalPriceEl ? originalPriceEl.textContent.trim() : '';
+
+    // Scrape overall Steam review summary (last summary row when both Recent & All exist)
+    const reviewSummaryEls = Array.from(document.querySelectorAll('#user_reviews_filter_score .game_review_summary, .user_reviews_summary_row .game_review_summary'));
+    const reviewSummaryEl = reviewSummaryEls.length > 0 ? reviewSummaryEls[reviewSummaryEls.length - 1] : null;
+    const reviewSummary = reviewSummaryEl ? reviewSummaryEl.textContent.trim() : 'No reviews';
 
     const description = document.querySelector('.game_description_snippet')?.textContent.trim() || 
                         document.querySelector('#game_area_description')?.textContent.trim().substring(0, 300) || '';
@@ -1302,6 +1501,9 @@
       appId,
       priceNumeric: isNaN(priceNumeric) ? 0 : priceNumeric,
       priceString: priceString || (priceNumeric === 0 ? 'Free' : priceNumeric.toString()),
+      discountPct,
+      originalPriceString,
+      reviewSummary,
       description,
       genres: uniqueGenres,
       categories: uniqueCategories,
@@ -1391,7 +1593,7 @@
     const appNameElem = document.querySelector('#appHubAppName') || document.querySelector('.apphub_AppName');
     if (!appNameElem) return null;
     const text = appNameElem.textContent || '';
-    const tagMatches = text.match(/\[(CRACKED|UNCRACKED|SteamStub|Not on RIN|bypass|denuvo)\]/gi);
+    const tagMatches = text.match(/\[(CRACKED|UNCRACKED|SteamStub|Not on RIN|bypass|denuvo|hypervisor)\]/gi);
     if (tagMatches && tagMatches.length > 0) {
       return tagMatches.join(' ');
     }
@@ -1443,6 +1645,114 @@
     }
   }
 
+  async function fetchFitGirlStatus(appName) {
+    if (!appName) {
+      return { found: false, isHypervisor: false, title: null, label: null };
+    }
+    try {
+      const cleanSearchName = appName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[™®©]/g, '')
+        .replace(/[:\-–—]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const url = `https://fitgirl-repacks.site/wp-json/wp/v2/posts?search=${encodeURIComponent(cleanSearchName)}&search_columns=post_title&per_page=10`;
+      const response = await gmFetch(url);
+      if (!response.ok) {
+        return { found: false, isHypervisor: false, title: null, label: null };
+      }
+
+      const posts = await response.json();
+      if (!Array.isArray(posts) || posts.length === 0) {
+        return { found: false, isHypervisor: false, title: null, label: null };
+      }
+
+      const decodeHtml = (html) => {
+        const doc = new DOMParser().parseFromString(html || '', 'text/html');
+        return (doc.documentElement.textContent || '').trim();
+      };
+
+      const toSlug = (str) => str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[™®©'’]/g, '')
+        .replace(/&/g, ' and ')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+      const normalizeTitle = (str) => str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[™®©'’]/g, '')
+        .replace(/&/g, ' and ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+      const appSlug = toSlug(appName);
+      const normApp = normalizeTitle(appName);
+      const compactApp = normApp.replace(/\s+/g, '');
+      const editionSuffixRe = /^(edition|complete|deluxe|ultimate|goty|game of the year|remastered|director|repack|collection|definitive|bundle|all dlc|digital|anniversary|gold|premium|standard|enhanced|royal|anthology)/i;
+
+      let matchedPost = null;
+      let matchedTitle = '';
+
+      // Pass 1: Exact FitGirl post slug match (e.g. "days-gone")
+      for (const post of posts) {
+        if (post?.slug && post.slug.toLowerCase() === appSlug) {
+          matchedPost = post;
+          matchedTitle = decodeHtml(post?.title?.rendered || '') || post.slug;
+          break;
+        }
+      }
+
+      // Pass 2: Normalized base title or edition-suffixed title/slug match
+      if (!matchedPost) {
+        for (const post of posts) {
+          const decodedTitle = decodeHtml(post?.title?.rendered || '');
+          if (!decodedTitle) continue;
+
+          const baseTitle = decodedTitle.split(/\s+[\u2013\u2014]\s+|\s+\+\s+|,\s*v\d|\s+v\d|\s+build\s+\d/i)[0];
+          const normBase = normalizeTitle(baseTitle);
+          const compactBase = normBase.replace(/\s+/g, '');
+          const postSlug = (post?.slug || '').toLowerCase();
+
+          const isExactMatch = normBase === normApp || compactBase === compactApp;
+          const isEditionMatch = normBase.startsWith(normApp + ' ') &&
+            editionSuffixRe.test(normBase.slice(normApp.length).trim());
+          const isSlugEditionMatch = appSlug && postSlug.startsWith(appSlug + '-') &&
+            editionSuffixRe.test(postSlug.slice(appSlug.length + 1).replace(/-/g, ' '));
+
+          if (isExactMatch || isEditionMatch || isSlugEditionMatch) {
+            matchedPost = post;
+            matchedTitle = decodedTitle;
+            break;
+          }
+        }
+      }
+
+      if (!matchedPost) {
+        return { found: false, isHypervisor: false, title: null, label: null };
+      }
+
+      const contentHtml = matchedPost?.content?.rendered || '';
+      const isHypervisor = /hypervisor/i.test(matchedTitle) || /hypervisor/i.test(contentHtml);
+
+      return {
+        found: true,
+        isHypervisor,
+        title: matchedTitle,
+        label: isHypervisor ? '[FitGirl: Hypervisor Crack]' : '[FitGirl Repack Available]'
+      };
+    } catch (err) {
+      console.warn('Steam Matrix: FitGirl API query failed:', err);
+      return { found: false, isHypervisor: false, title: null, label: null };
+    }
+  }
+
   // --- API COMMUNICATIONS ---
 
   async function getPlayerCount(appId) {
@@ -1460,75 +1770,178 @@
     return null;
   }
 
+  function extractJsonFromGeminiResult(result) {
+    const parts = result?.candidates?.[0]?.content?.parts || [];
+    const text = parts
+      .filter(p => !p.thought && typeof p.text === 'string')
+      .map(p => p.text)
+      .join('\n')
+      .trim();
+
+    if (!text) {
+      throw new Error('Empty response text from Gemini API.');
+    }
+
+    const isMatrixObj = (obj) => obj && typeof obj === 'object' && ('verdict' in obj || 'decision_score' in obj);
+
+    // 1. Direct JSON parse (cleanest path for responseMimeType: "application/json")
+    try {
+      const direct = JSON.parse(text);
+      if (isMatrixObj(direct)) return direct;
+    } catch (_) {}
+
+    // 2. Fenced code block anywhere in grounded prose
+    const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+    let fenceMatch;
+    while ((fenceMatch = fenceRe.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(fenceMatch[1].trim());
+        if (isMatrixObj(parsed)) return parsed;
+      } catch (_) {}
+    }
+
+    // 3. Balanced brace scan for a valid matrix JSON object in prose
+    let depth = 0;
+    let startIdx = -1;
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\' && inString) {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (ch === '{') {
+        if (depth === 0) startIdx = i;
+        depth++;
+      } else if (ch === '}' && depth > 0) {
+        depth--;
+        if (depth === 0 && startIdx !== -1) {
+          const slice = text.slice(startIdx, i + 1);
+          try {
+            const parsed = JSON.parse(slice);
+            if (isMatrixObj(parsed)) return parsed;
+          } catch (_) {}
+          startIdx = -1;
+        }
+      }
+    }
+
+    throw new Error('Could not parse valid Matrix JSON from Gemini response.');
+  }
+
   async function evaluateGameWithAI(gameData, config) {
     const price = gameData.priceNumeric;
     const threshold = config.MATRIX_PRICE_THRESHOLD;
     const underThreshold = price < threshold;
+    const dirtCheapThreshold = Math.round(threshold * 0.2);
+    const isDirtCheap = (price > 0 && price <= dirtCheapThreshold) || (underThreshold && (gameData.discountPct || 0) >= 75);
+
+    let priceTier = `ABOVE THRESHOLD (Expensive Tier >= ${threshold} ${config.STEAM_CC})`;
+    if (isDirtCheap) {
+      priceTier = `DIRT CHEAP / IMPULSE TIER (<= ${dirtCheapThreshold} ${config.STEAM_CC} or >= 75% off under threshold)`;
+    } else if (underThreshold) {
+      priceTier = `BELOW THRESHOLD (Affordable / Mid Tier < ${threshold} ${config.STEAM_CC})`;
+    }
 
     const genresStr = (gameData.genres || []).join(', ') || 'N/A';
     const categoriesStr = (gameData.categories || []).join(', ') || 'N/A';
     const drmStr = gameData.drmNotice || 'None detected';
-    const crackStatusStr = gameData.crackStatus || 'Unknown / Not detected';
+    const rinStatusStr = gameData.rinStatus || 'Unknown / Not detected';
+    const fitGirlLabel = (gameData.fitGirlStatus && gameData.fitGirlStatus.label) ? gameData.fitGirlStatus.label : 'Not found on FitGirl';
+    const discountText = gameData.discountPct > 0
+      ? `-${gameData.discountPct}% off (Original: ${gameData.originalPriceString || 'N/A'})`
+      : 'No active discount';
 
-    let prompt = '';
-
-    if (underThreshold) {
-      prompt = `You are evaluating a game for the Steam Purchase Decision Matrix.
-The game is cheap/under the threshold of ${threshold} ${config.STEAM_CC}. You need to score the "Hassle of Cracking/Pirating" this game on a scale of 1 to 5:
-
-Game details:
-- Name: ${gameData.name}
-- Price: ${gameData.priceString} (Threshold: ${threshold})
-- Description: ${gameData.description}
-- Genres: ${genresStr}
-- Categories: ${categoriesStr}
-- Active Steam Players (Online now): ${gameData.playerCount !== null ? gameData.playerCount : 'Unknown'} (Note: If this is very low, e.g. < 100, online multiplayer is effectively dead, which might impact the value of buying it for matchmaking).
-- DRM / Protection Notice: ${drmStr}
-- Community Crack Status (CS.RIN.RU): ${crackStatusStr}
-
-Score the "Hassle of Cracking" (1 to 5) where:
-- 5 (High hassle to crack): The game has active uncracked DRM (e.g. Denuvo, VMProtect, or uncracked status on CS.RIN.RU), requires complex hypervisor or token bypasses, has frequent updates that break compatibility, relies heavily on Steam Workshop for essential mods, or relies on Steam Cloud saves. Running or maintaining a cracked copy is impossible or a major headache. (Recommends BUY).
-- 1 (Low hassle to crack): A crack or repack is confirmed available, the game has no intrusive DRM, is a static single-player game, receives few updates, does not use Steam Workshop for mods, and is simple to install once and play. Running a cracked copy is completely hassle-free. (Recommends CRACK).
-- 2 to 4: Intermediate hassle (e.g., cracked but updates frequently; or moderate modding required).
-
-CRITICAL RULES:
-- Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or 3rd-party DRM, you MUST NOT claim the game has "no DRM" or that standard Steam emulators work. Denuvo prevents standard emulation and represents maximum cracking hassle (score 5, BUY).
-- If "DRM / Protection Notice" is "None detected", you MUST NOT claim the game has Denuvo, VMProtect, or 3rd-party DRM. Steam contractually discloses all 3rd-party DRM; if not listed, the game does NOT have Denuvo. Do NOT rely on outdated memory or past editions (e.g. games that removed Denuvo or new editions).
-- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Peer-to-peer co-op", "Dedicated multiplayer matchmaking", "Steam Workshop mod support", "Steam Cloud sync"). DO NOT make contradictory claims about DRM or anti-tamper (never output "No DRM detected" if Denuvo is present, and never output "Denuvo" if no DRM is listed).
-
-Provide:
-1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
-2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like crack availability/DRM, update frequency, or Steam Workshop reliance).
-3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's gameplay connectivity, e.g. "Offline single-player campaign", "Online co-op multiplayer", "Steam Workshop mods", "Cloud saves enabled", "Frequent patches/updates").`;
-    } else {
-      prompt = `You are evaluating a game for the Steam Purchase Decision Matrix.
-The game is expensive/over the threshold of ${threshold} ${config.STEAM_CC}. You need to score the "Online Dependency / Buy Requirement" on a scale of 1 to 5:
+    const prompt = `You are evaluating a game for the Unified Steam Purchase Decision Matrix.
+Analyze all three pillars (Crack Status, Core Online Dependency, Crack Maintenance Hassle) alongside the Price Tier, Discount, Reviews, and Active Players to recommend a verdict.
 
 Game details:
 - Name: ${gameData.name}
-- Price: ${gameData.priceString} (Threshold: ${threshold})
+- AppID: ${gameData.appId}
+- Release Date: ${gameData.releaseDate || 'Unknown'}
+- Early Access: ${gameData.isEarlyAccess ? 'Yes' : 'No'}
+- Current Price: ${gameData.priceString} | Discount: ${discountText} | User Threshold: ${threshold} ${config.STEAM_CC}
+- Computed Price Tier: ${priceTier}
+- Steam Review Summary: ${gameData.reviewSummary || 'No reviews'}
+- Active Steam Players (Online now): ${gameData.playerCount !== null ? gameData.playerCount : 'Unknown'} (Use this strictly to check if online-centric games have healthy servers or dead < 100 player counts)
 - Description: ${gameData.description}
 - Genres: ${genresStr}
 - Categories: ${categoriesStr}
-- Active Steam Players (Online now): ${gameData.playerCount !== null ? gameData.playerCount : 'Unknown'} (Note: If this is very low, e.g. < 100, online multiplayer is effectively dead, which might impact the value of buying it for matchmaking).
-- DRM / Protection Notice: ${drmStr}
-- Community Crack Status (CS.RIN.RU): ${crackStatusStr}
+- DRM / Protection Notice (Scraped from Steam): ${drmStr}
+- Community Crack Status (CS.RIN.RU): ${rinStatusStr}
+- FitGirl Repacks Status: ${fitGirlLabel}
 
-Score the "Online Dependency / Buy Requirement" (1 to 5) where:
-- 5 (High online requirement / Must Buy): The game has uncracked DRM (e.g. Denuvo), server-side validations, live services, or is multiplayer matchmaking only. Cracking is impossible or makes the game completely unplayable. You MUST buy it to play it. (Recommends BUY).
-- 1 (Low online requirement / Safe to Crack): The game is confirmed cracked or DRM-free, fully playable offline, features a single-player focus, and does not require constant server connection or matchmaking. A cracked copy works flawlessly, so you can crack it to save money. (Recommends CRACK).
-- 2 to 4: Intermediate dependency (e.g., strong single-player campaign but has co-op or online features).
+EVALUATION PILLARS:
+1. \`crack_status\`: "CRACKED" | "HYPERVISOR_ONLY" | "UNCRACKED" | "ONLINE_ONLY"
+   - Check CS.RIN.RU status, FitGirl Repack status, DRM notice, and release date alongside your knowledge to determine whether a working non-hypervisor crack exists.
+   - If FitGirl Repacks Status is "[FitGirl Repack Available]" or CS.RIN.RU Status includes "[CRACKED]" or "[SteamStub]", \`crack_status\` MUST be "CRACKED".
+   - If DRM / Protection Notice is "None detected" (standard Steam protection only) and the game is NOT online-only, standard Steam DRM is easily bypassed by Steam emulators, so \`crack_status\` MUST be "CRACKED" even if FitGirl or CS.RIN.RU status is unknown.
+   - CRITICAL HYPERVISOR RULE: If the only available crack or bypass is a Hypervisor crack/bypass, classify \`crack_status\` as "HYPERVISOR_ONLY" and \`crack_hassle\` as "HIGH". The user strictly refuses to use hypervisor cracks, so a hypervisor-only game MUST NEVER receive a "CRACK" verdict—treat it like an uncracked game ("BUY" if affordable/on sale with good reviews, or "WAIT" if expensive/full price or mixed reviews).
+   - Strictly respect the scraped DRM Notice: if it says "None detected", do NOT invent Denuvo/VMProtect. If Denuvo/VMProtect is listed and no clean non-hypervisor crack is confirmed, classify as "UNCRACKED" (or "HYPERVISOR_ONLY" if hypervisor-cracked).
+   - Use "ONLINE_ONLY" when server-side validation / live service makes offline cracking impossible regardless of DRM.
 
-CRITICAL RULES:
-- Strictly adhere to the "DRM / Protection Notice". If it specifies Denuvo, VMProtect, or uncracked DRM, you MUST NOT claim the game has "no DRM". Denuvo prevents cracking and mandates a score of 5 (BUY).
-- If "DRM / Protection Notice" is "None detected", you MUST NOT claim the game has Denuvo, VMProtect, or uncracked DRM. Steam contractually discloses all 3rd-party DRM; if not listed, the game does NOT have Denuvo. Do NOT rely on outdated memory or past editions.
-- For \`online_components\`: provide 3 to 5 short gameplay connectivity and dependency items (e.g. "Offline single-player campaign", "Online matchmaking required", "Server-side character saves", "P2P multiplayer"). DO NOT output claims like "No DRM detected" if Denuvo is listed, and never output "Denuvo" if no DRM is listed.
+2. \`online_core\`: "LOW" | "MEDIUM" | "HIGH"
+   - "HIGH": Core gameplay or majority of features are mandatory online, live-service, MMO, or multiplayer matchmaking where cracking makes no sense.
+   - "MEDIUM": Substantial co-op / online features that meaningfully affect the experience, though solo play exists.
+   - "LOW": Primarily offline / single-player game (even if Steam lists optional co-op, leaderboards, or Steam Cloud tags).
 
-Provide:
-1. \`decision_score\` (int, 1-5) where score >= 3 maps to BUY, and score < 3 maps to CRACK.
-2. \`reasoning\` (str, exactly one or two sentences explaining why you chose this score, highlighting the specific features like single-player focus, offline viability, DRM status, server-side validations, or multiplayer requirements).
-3. \`online_components\` (list of strings, 3 to 5 short items breaking down the game's gameplay connectivity, e.g. "Online matchmaking only", "Server-side validations", "Offline campaign", "Always-online required", "Peer-to-peer co-op").`;
-    }
+3. \`crack_hassle\`: "LOW" | "MEDIUM" | "HIGH"
+   - Measures maintenance friction of a cracked copy: frequent patches/updates (Early Access or recent launch), heavy reliance on Steam Workshop mods, or important Cloud/cross-save sync. "UNCRACKED", "HYPERVISOR_ONLY", and "ONLINE_ONLY" automatically have "HIGH" crack_hassle.
+
+VERDICT & PRICE WEIGHTING RULES (\`verdict\` & \`decision_score\` 1-5):
+- "SKIP" (Score 1): Use when \`online_core\` is "HIGH" (no point cracking) AND Active Steam Players is critically low (< 100 players online) or Steam Reviews are overwhelmingly negative.
+- "WAIT" (Score 3): Use when the game cannot be cleanly cracked ("UNCRACKED" or "HYPERVISOR_ONLY", or extreme "HIGH" crack_hassle) AND it is currently in the ABOVE THRESHOLD tier without a deep discount (>= 40% off) OR has Mixed/Negative reviews. Do NOT tell the user to pay full high price just because a crack isn't ready.
+- "BUY" (Score 4-5):
+  * DIRT CHEAP TIER: Strongly lean "BUY" (Score 4) for instant Steam convenience, Cloud saves, and zero torrent/repack friction if reviews are Positive—only choose "CRACK" if \`crack_hassle\` is strictly zero on a tiny static offline game or reviews are poor.
+  * BELOW THRESHOLD TIER: Recommend "BUY" when \`online_core\` is "MEDIUM"/"HIGH" (with healthy player count), \`crack_hassle\` is "MEDIUM"/"HIGH", or \`crack_status\` is "UNCRACKED"/"HYPERVISOR_ONLY" with Positive reviews.
+  * ABOVE THRESHOLD TIER: Recommend "BUY" only when the high price is justified—e.g. "HIGH" \`online_core\` with healthy player count (>= 100), heavy Workshop/update dependence, or "UNCRACKED"/"HYPERVISOR_ONLY" on a strong sale with Very/Overwhelmingly Positive reviews.
+- "CRACK" (Score 1-2): Use when a clean non-hypervisor crack exists (\`crack_status\` is "CRACKED"), \`online_core\` is "LOW" (or "MEDIUM" above threshold where solo campaign is the main draw), and paying the asking price isn't justified over a low/moderate-hassle cracked copy.
+
+CRITICAL OUTPUT RULES:
+- \`reasoning\`: Exactly 1 or 2 concise sentences explaining the verdict, referencing the real crack/DRM state, online core vs player count (if relevant), hassle, and price tier.
+- \`online_components\`: 3 to 5 short tags describing gameplay connectivity and dependencies (e.g. "Offline single-player campaign", "Optional P2P co-op", "Steam Workshop mod support", "Live-service matchmaking", "Frequent updates"). Never contradict the scraped DRM notice.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "verdict": "BUY" | "CRACK" | "WAIT" | "SKIP",
+  "decision_score": 1-5,
+  "crack_status": "CRACKED" | "HYPERVISOR_ONLY" | "UNCRACKED" | "ONLINE_ONLY",
+  "online_core": "LOW" | "MEDIUM" | "HIGH",
+  "crack_hassle": "LOW" | "MEDIUM" | "HIGH",
+  "reasoning": "1-2 sentences...",
+  "online_components": ["3 to 5 short items"]
+}`;
+
+    const responseSchemaConfig = {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          verdict: { type: "STRING", enum: ["BUY", "CRACK", "WAIT", "SKIP"] },
+          decision_score: { type: "INTEGER" },
+          crack_status: { type: "STRING", enum: ["CRACKED", "HYPERVISOR_ONLY", "UNCRACKED", "ONLINE_ONLY"] },
+          online_core: { type: "STRING", enum: ["LOW", "MEDIUM", "HIGH"] },
+          crack_hassle: { type: "STRING", enum: ["LOW", "MEDIUM", "HIGH"] },
+          reasoning: { type: "STRING" },
+          online_components: {
+            type: "ARRAY",
+            items: { type: "STRING" }
+          }
+        },
+        required: ["verdict", "decision_score", "crack_status", "online_core", "crack_hassle", "reasoning", "online_components"]
+      },
+      temperature: 0.2
+    };
 
     const requestBody = {
       contents: [
@@ -1538,134 +1951,265 @@ Provide:
           ]
         }
       ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            decision_score: { type: "INTEGER" },
-            reasoning: { type: "STRING" },
-            online_components: {
-              type: "ARRAY",
-              items: { type: "STRING" }
-            }
-          },
-          required: ["decision_score", "reasoning", "online_components"]
-        },
-        temperature: 0.2
-      }
+      generationConfig: responseSchemaConfig
     };
 
     const models = [
-      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-3.6-flash',
       'gemini-3.1-flash-lite',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash'
+      'gemini-flash-latest'
     ];
+
+    const discoverAvailableModel = async (apiKey, triedModels) => {
+      try {
+        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        const res = await gmFetch(listUrl);
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!Array.isArray(data.models)) return null;
+
+        const candidates = data.models
+          .filter(m =>
+            Array.isArray(m.supportedGenerationMethods) &&
+            m.supportedGenerationMethods.includes('generateContent') &&
+            !/tts|image|banana|embedding|live|transcribe|robotics|omni|veo|imagen|computer-use|deep-research/i.test(m.name || '') &&
+            !/gemini-[12]\./i.test(m.name || '') &&
+            !/pro|gemini-4|carbon|argon/i.test(m.name || '') &&
+            !/preview-09-2025|preview-10-2025|preview-12-2025|deprecated/i.test(m.name || '')
+          )
+          .map(m => (m.name || '').replace(/^models\//, ''))
+          .filter(name => name && !triedModels.includes(name));
+
+        if (candidates.length === 0) return null;
+        const preferredLite = candidates.find(name => /flash-lite/i.test(name));
+        const preferredFlash = candidates.find(name => /flash/i.test(name));
+        return preferredLite || preferredFlash || candidates[0];
+      } catch (err) {
+        console.warn('Matrix: ListModels discovery failed:', err);
+        return null;
+      }
+    };
+
+    const tryEvaluateWithModel = async (modelName) => {
+      console.log(`Matrix: Attempting query with model ${modelName}...`);
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.GEMINI_API_KEY}`;
+
+      const response = await gmFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.error?.message || `HTTP error! status: ${response.status}`;
+        const err = new Error(message);
+        err.status = response.status;
+        throw err;
+      }
+
+      const result = await response.json();
+      if (!result.candidates || result.candidates.length === 0) {
+        throw new Error('No candidates returned from Gemini API.');
+      }
+
+      const parsedResponse = extractJsonFromGeminiResult(result);
+
+      // Normalize core fields
+      parsedResponse.verdict = ['BUY', 'CRACK', 'WAIT', 'SKIP'].includes((parsedResponse.verdict || '').toUpperCase())
+        ? parsedResponse.verdict.toUpperCase()
+        : (parsedResponse.decision_score >= 3 ? 'BUY' : 'CRACK');
+      parsedResponse.crack_status = ['CRACKED', 'HYPERVISOR_ONLY', 'UNCRACKED', 'ONLINE_ONLY'].includes((parsedResponse.crack_status || '').toUpperCase())
+        ? parsedResponse.crack_status.toUpperCase()
+        : 'CRACKED';
+      parsedResponse.online_core = ['LOW', 'MEDIUM', 'HIGH'].includes((parsedResponse.online_core || '').toUpperCase())
+        ? parsedResponse.online_core.toUpperCase()
+        : 'LOW';
+      parsedResponse.crack_hassle = ['LOW', 'MEDIUM', 'HIGH'].includes((parsedResponse.crack_hassle || '').toUpperCase())
+        ? parsedResponse.crack_hassle.toUpperCase()
+        : 'LOW';
+      parsedResponse.reasoning = String(parsedResponse.reasoning || '').trim();
+
+      // 1. Hypervisor Guard: user refuses hypervisor cracks -> treat as unviable/high hassle
+      const hypervisorDetected = Boolean(gameData.isHypervisor) || parsedResponse.crack_status === 'HYPERVISOR_ONLY';
+      if (hypervisorDetected) {
+        parsedResponse.crack_status = 'HYPERVISOR_ONLY';
+        parsedResponse.crack_hassle = 'HIGH';
+        if (parsedResponse.verdict === 'CRACK') {
+          parsedResponse.verdict = underThreshold ? 'BUY' : 'WAIT';
+          parsedResponse.decision_score = underThreshold ? 4 : 3;
+          if (!/hypervisor/i.test(parsedResponse.reasoning)) {
+            parsedResponse.reasoning += ' Only a hypervisor crack is available, which is treated as unviable.';
+          }
+        }
+      }
+
+      // 2. Strong DRM Anti-Hallucination & Policy Guard
+      const hasStrongDrm = drmStr && /denuvo|vmprotect|arxan/i.test(drmStr);
+      const rinUncracked = /uncracked/i.test(rinStatusStr);
+      const rinCracked = /cracked/i.test(rinStatusStr) && !rinUncracked && !/hypervisor/i.test(rinStatusStr);
+      const fitGirlCleanCracked = Boolean(gameData.fitGirlStatus && gameData.fitGirlStatus.found && !gameData.fitGirlStatus.isHypervisor);
+      const locallyConfirmedCracked = !hypervisorDetected && !rinUncracked && (rinCracked || fitGirlCleanCracked);
+
+      if (hasStrongDrm) {
+        const rLower = parsedResponse.reasoning.toLowerCase();
+        const noDrmRegex = /no\s+(?:[a-z-]+\s+)*drm|drm-free|drm\s*free|lacks\s+drm|without\s+(?:any\s+)?(?:[a-z-]+\s+)*drm|none\s+detected/i;
+        const contradicts = noDrmRegex.test(rLower);
+        const searchConfirmedCracked = !hypervisorDetected && !rinUncracked && parsedResponse.crack_status === 'CRACKED' && !contradicts;
+
+        if (!locallyConfirmedCracked && !searchConfirmedCracked) {
+          if (contradicts || parsedResponse.verdict === 'CRACK') {
+            console.log("Matrix guard triggered: overriding unverified CRACK / hallucinatory DRM response.");
+            parsedResponse.crack_status = hypervisorDetected ? 'HYPERVISOR_ONLY' : 'UNCRACKED';
+            parsedResponse.crack_hassle = 'HIGH';
+            parsedResponse.verdict = underThreshold ? 'BUY' : 'WAIT';
+            parsedResponse.decision_score = underThreshold ? 4 : 3;
+            if (contradicts) {
+              parsedResponse.reasoning = `This game incorporates ${drmStr.split(';')[0]}, which prevents standard cracking. ${underThreshold ? 'Buying at this price is recommended.' : 'Waiting for a sale is recommended.'}`;
+            }
+          }
+        } else if (contradicts) {
+          console.log("Matrix guard triggered: fixing hallucinated reasoning for cracked game with strong DRM.");
+          parsedResponse.reasoning = parsedResponse.reasoning.replace(new RegExp(noDrmRegex, 'gi'), 'Although it has strong DRM, it');
+        }
+
+        if (Array.isArray(parsedResponse.online_components)) {
+          parsedResponse.online_components = parsedResponse.online_components.filter(c => !noDrmRegex.test(c));
+          if (!parsedResponse.online_components.some(c => /denuvo|vmprotect|arxan|drm/i.test(c))) {
+            parsedResponse.online_components.unshift(`Protected by ${drmStr.split(' ')[0] || 'Strong'} DRM`);
+          }
+        }
+      } else {
+        // 3. False DRM Guard: If Steam page does NOT have Denuvo/VMProtect/Arxan, prevent AI from hallucinating that it does
+        const rLower = parsedResponse.reasoning.toLowerCase();
+        const falseDrmRegex = /\b(?:denuvo(?:\s+anti-tamper)?|vmprotect|arxan)\b/i;
+
+        if (falseDrmRegex.test(rLower)) {
+          console.log("Matrix guard triggered: AI hallucinated Denuvo/DRM when none exists on Steam page. Correcting reasoning.");
+          parsedResponse.reasoning = parsedResponse.reasoning
+            .replace(/incorporates\s+3rd-party\s+drm:\s*denuvo[^\n\r.,]*/gi, 'has no 3rd-party DRM')
+            .replace(/incorporates\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'has standard Steam protection')
+            .replace(/features\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'features standard Steam protection')
+            .replace(/protected\s+by\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'free of 3rd-party DRM')
+            .replace(/uses\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'uses standard Steam protection')
+            .replace(/denuvo\s+anti-tamper\s+drm/gi, 'standard Steam protection')
+            .replace(/denuvo\s+anti-tamper/gi, 'standard Steam protection')
+            .replace(/denuvo\s+drm/gi, 'standard Steam protection')
+            .replace(/\bdenuvo\b/gi, 'standard Steam');
+
+          const catLower = (gameData.categories || []).join(' ').toLowerCase();
+          const descLower = (gameData.description || '').toLowerCase();
+          const isSinglePlayer = catLower.includes('single-player') || catLower.includes('single player') || descLower.includes('single-player');
+
+          if (isSinglePlayer && !hypervisorDetected && parsedResponse.online_core !== 'HIGH' && !isDirtCheap && parsedResponse.decision_score >= 3) {
+            parsedResponse.verdict = 'CRACK';
+            parsedResponse.crack_status = 'CRACKED';
+            parsedResponse.decision_score = 1;
+            parsedResponse.reasoning += " (Note: No Denuvo or 3rd-party DRM detected on Steam; single-player content is playable offline).";
+          }
+        }
+
+        if (Array.isArray(parsedResponse.online_components)) {
+          parsedResponse.online_components = parsedResponse.online_components.filter(c => !falseDrmRegex.test(c));
+        }
+      }
+
+      // 3b. Confirmed Cracked / Standard Steam Non-Uncracked Guard
+      const standardSteamNotUncracked = !hasStrongDrm && !hypervisorDetected && !rinUncracked &&
+        parsedResponse.online_core !== 'HIGH' && parsedResponse.crack_status === 'UNCRACKED';
+
+      if (locallyConfirmedCracked || standardSteamNotUncracked) {
+        const wasMarkedUncracked = parsedResponse.crack_status === 'UNCRACKED';
+        parsedResponse.crack_status = 'CRACKED';
+
+        if (wasMarkedUncracked && parsedResponse.crack_hassle === 'HIGH' && !gameData.isEarlyAccess) {
+          parsedResponse.crack_hassle = 'LOW';
+        }
+
+        const falseUncrackedRegex = /\b(?:uncracked|not\s+(?:yet\s+)?cracked|no\s+working\s+crack|cannot\s+be\s+cracked|remains\s+uncracked|lacks\s+a\s+crack)\b/i;
+        const reasoningClaimedUncracked = falseUncrackedRegex.test(parsedResponse.reasoning);
+        if (reasoningClaimedUncracked) {
+          parsedResponse.reasoning = parsedResponse.reasoning
+            .replace(/\b(?:remains|is|currently)\s+uncracked\b/gi, 'is cracked')
+            .replace(/\buncracked\b/gi, 'cracked')
+            .replace(/\bnot\s+(?:yet\s+)?cracked\b/gi, 'already cracked')
+            .replace(/\bno\s+working\s+crack\b/gi, 'a working crack is available')
+            .replace(/\bcannot\s+be\s+cracked\b/gi, 'can be cracked')
+            .replace(/\blacks\s+a\s+crack\b/gi, 'has a working crack');
+        }
+
+        if (Array.isArray(parsedResponse.online_components)) {
+          parsedResponse.online_components = parsedResponse.online_components.filter(c => !falseUncrackedRegex.test(c));
+        }
+
+        if (
+          (wasMarkedUncracked || reasoningClaimedUncracked) &&
+          (parsedResponse.verdict === 'WAIT' || (!underThreshold && parsedResponse.verdict === 'BUY' && parsedResponse.online_core === 'LOW' && parsedResponse.crack_hassle === 'LOW'))
+        ) {
+          console.log("Matrix guard triggered: overriding false UNCRACKED verdict to CRACK.");
+          parsedResponse.verdict = 'CRACK';
+          parsedResponse.decision_score = 1;
+          if (fitGirlCleanCracked && !/fitgirl|crack/i.test(parsedResponse.reasoning)) {
+            parsedResponse.reasoning += ' A FitGirl repack is confirmed available for offline play.';
+          }
+        }
+      }
+
+      // 4. Dead Online Guard
+      if (parsedResponse.online_core === 'HIGH' && gameData.playerCount !== null && gameData.playerCount < 100 && parsedResponse.verdict === 'BUY') {
+        console.log("Matrix guard triggered: High online core with dead player count -> overriding to SKIP.");
+        parsedResponse.verdict = 'SKIP';
+        parsedResponse.decision_score = 1;
+        if (!/player|dead|empty|low/i.test(parsedResponse.reasoning)) {
+          parsedResponse.reasoning += ` (Only ${gameData.playerCount} active Steam players online, making online play unviable.)`;
+        }
+      }
+
+      // 5. Align numeric score with final verdict
+      let finalScore = parseInt(parsedResponse.decision_score, 10);
+      if (isNaN(finalScore)) finalScore = 3;
+      if (parsedResponse.verdict === 'SKIP') finalScore = 1;
+      else if (parsedResponse.verdict === 'CRACK') finalScore = Math.max(1, Math.min(2, finalScore));
+      else if (parsedResponse.verdict === 'WAIT') finalScore = 3;
+      else if (parsedResponse.verdict === 'BUY') finalScore = Math.max(4, Math.min(5, finalScore));
+
+      return {
+        evaluationType: 'UNIFIED',
+        verdict: parsedResponse.verdict,
+        decisionScore: finalScore,
+        crackStatus: parsedResponse.crack_status,
+        onlineCore: parsedResponse.online_core,
+        crackHassle: parsedResponse.crack_hassle,
+        reasoning: parsedResponse.reasoning,
+        onlineComponents: parsedResponse.online_components,
+        threshold: threshold,
+        priceNumeric: price,
+        underThreshold: underThreshold,
+        modelUsed: modelName
+      };
+    };
 
     let lastError = null;
 
     for (const modelName of models) {
       try {
-        console.log(`Matrix: Attempting query with model ${modelName}...`);
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.GEMINI_API_KEY}`;
-
-        const response = await gmFetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          const message = errorData.error?.message || `HTTP error! status: ${response.status}`;
-          throw new Error(message);
-        }
-
-        const result = await response.json();
-        
-        if (!result.candidates || result.candidates.length === 0) {
-          throw new Error('No candidates returned from Gemini API.');
-        }
-
-        const textResponse = result.candidates[0].content.parts[0].text;
-        const parsedResponse = JSON.parse(textResponse);
-
-        // Anti-hallucination guard: If strong DRM exists, never allow "no DRM" claims
-        const hasStrongDrm = drmStr && /denuvo|vmprotect|arxan/i.test(drmStr);
-        const isCracked = crackStatusStr && /cracked/i.test(crackStatusStr) && !/uncracked/i.test(crackStatusStr);
-        
-        if (hasStrongDrm) {
-          const rLower = parsedResponse.reasoning.toLowerCase();
-          const noDrmRegex = /no\s+(?:[a-z-]+\s+)*drm|drm-free|drm\s*free|lacks\s+drm|without\s+(?:any\s+)?(?:[a-z-]+\s+)*drm|none\s+detected/i;
-          const contradicts = noDrmRegex.test(rLower);
-          
-          if (!isCracked && (parsedResponse.decision_score < 3 || contradicts)) {
-            console.log("Matrix guard triggered: overriding hallucinatory LLM response regarding strong DRM.");
-            parsedResponse.decision_score = 5;
-            parsedResponse.reasoning = `This game incorporates ${drmStr.split(';')[0]}, which makes it highly difficult to crack. Buying is recommended.`;
-          } else if (isCracked && contradicts) {
-            console.log("Matrix guard triggered: fixing hallucinated reasoning for cracked game with strong DRM.");
-            parsedResponse.reasoning = parsedResponse.reasoning.replace(new RegExp(noDrmRegex, 'gi'), 'Although it has strong DRM, it');
-          }
-
-          // Clean up hallucinated features as well
-          if (Array.isArray(parsedResponse.online_components)) {
-            parsedResponse.online_components = parsedResponse.online_components.filter(c => !noDrmRegex.test(c));
-            // Ensure at least one element mentions the strong DRM if we removed the hallucinated one
-            if (!parsedResponse.online_components.some(c => /denuvo|vmprotect|arxan|drm/i.test(c))) {
-               parsedResponse.online_components.unshift(`Protected by ${drmStr.split(' ')[0] || 'Strong'} DRM`);
-            }
-          }
-        } else {
-          // Guard: If Steam page does NOT have Denuvo/VMProtect/Arxan, prevent AI from hallucinating that it does!
-          const rLower = parsedResponse.reasoning.toLowerCase();
-          const falseDrmRegex = /\b(?:denuvo(?:\s+anti-tamper)?|vmprotect|arxan)\b/i;
-          
-          if (falseDrmRegex.test(rLower)) {
-            console.log("Matrix guard triggered: AI hallucinated Denuvo/DRM when none exists on Steam page. Correcting reasoning.");
-            parsedResponse.reasoning = parsedResponse.reasoning
-              .replace(/incorporates\s+3rd-party\s+drm:\s*denuvo[^\n\r.,]*/gi, 'has no 3rd-party DRM')
-              .replace(/incorporates\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'has standard Steam protection')
-              .replace(/features\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'features standard Steam protection')
-              .replace(/protected\s+by\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'free of 3rd-party DRM')
-              .replace(/uses\s+denuvo(?:\s+anti-tamper)?(?:\s+drm)?/gi, 'uses standard Steam protection')
-              .replace(/denuvo\s+anti-tamper\s+drm/gi, 'standard Steam protection')
-              .replace(/denuvo\s+anti-tamper/gi, 'standard Steam protection')
-              .replace(/denuvo\s+drm/gi, 'standard Steam protection')
-              .replace(/\bdenuvo\b/gi, 'standard Steam');
-
-            const catLower = (gameData.categories || []).join(' ').toLowerCase();
-            const descLower = (gameData.description || '').toLowerCase();
-            const isSinglePlayer = catLower.includes('single-player') || catLower.includes('single player') || descLower.includes('single-player');
-            
-            // If the score was pushed to BUY (>= 3) purely due to hallucinated Denuvo on a single-player game:
-            if (isSinglePlayer && parsedResponse.decision_score >= 3) {
-              parsedResponse.decision_score = 1;
-              parsedResponse.reasoning += " (Note: No Denuvo or 3rd-party DRM detected on Steam; single-player content is playable offline).";
-            }
-          }
-
-          // Clean up hallucinated Denuvo tags from online_components
-          if (Array.isArray(parsedResponse.online_components)) {
-            parsedResponse.online_components = parsedResponse.online_components.filter(c => !falseDrmRegex.test(c));
-          }
-        }
-
-        return {
-          evaluationType: underThreshold ? 'HASSLE' : 'ONLINE_DEPENDENCY',
-          decisionScore: parsedResponse.decision_score,
-          reasoning: parsedResponse.reasoning,
-          onlineComponents: parsedResponse.online_components,
-          threshold: threshold,
-          priceNumeric: price,
-          underThreshold: underThreshold,
-          modelUsed: modelName
-        };
+        return await tryEvaluateWithModel(modelName);
       } catch (err) {
         console.warn(`Matrix: Model ${modelName} failed. Error:`, err.message || err);
+        lastError = err;
+      }
+    }
+
+    // Dynamic fallback via ListModels if all static model names failed
+    const discoveredModel = await discoverAvailableModel(config.GEMINI_API_KEY, models);
+    if (discoveredModel) {
+      try {
+        console.log(`Matrix: Falling back to discovered model ${discoveredModel}...`);
+        return await tryEvaluateWithModel(discoveredModel);
+      } catch (err) {
+        console.warn(`Matrix: Discovered model ${discoveredModel} failed. Error:`, err.message || err);
         lastError = err;
       }
     }
